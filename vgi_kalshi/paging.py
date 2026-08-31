@@ -27,6 +27,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+import pyarrow as pa
 from vgi.cache_control import CacheControl
 from vgi.table_function import ProcessParams
 from vgi_rpc import ArrowSerializableDataclass
@@ -35,7 +36,7 @@ from vgi_rpc.rpc import OutputCollector
 from vgi_kalshi import auth
 from vgi_kalshi import kalshi_api as api
 from vgi_kalshi.kalshi_api import PAGE_LIMIT, STALE_IF_ERROR, CacheHint
-from vgi_kalshi.schemas import batch_from_rows
+from vgi_kalshi.pushdown import build_filtered
 
 
 @dataclass(kw_only=True)
@@ -80,6 +81,7 @@ def emit_page(
     path: str,
     key: str,
     query: dict[str, Any],
+    fixed_schema: pa.Schema,
     page_limit: int = PAGE_LIMIT,
     stamp: Callable[[Sequence[dict[str, Any]]], None] | None = None,
     opt_in_ttl: int = 0,
@@ -93,6 +95,8 @@ def emit_page(
         path: API path below the base.
         key: Key in the response holding this page's rows.
         query: Query parameters, before the cursor and page size are added.
+        fixed_schema: The function's full output schema. Needed because a pushed
+            predicate can reference a column the projection dropped.
         page_limit: Per-request page size; ``/events`` caps lower than the rest.
         stamp: Optional hook to add derived columns to the page's rows before
             they are built, used where a column is known to the caller but
@@ -128,7 +132,8 @@ def emit_page(
         cache_control = CacheControl(ttl=opt_in_ttl, stale_if_error=STALE_IF_ERROR)
     else:
         cache_control = None
-    out.emit(batch_from_rows(rows, params.output_schema), cache_control=cache_control)
+    batch, _ = build_filtered(params, rows, fixed_schema)
+    out.emit(batch, cache_control=cache_control)
 
 
 def emit_archive_page(
@@ -140,6 +145,7 @@ def emit_archive_page(
     key: str,
     query: dict[str, Any],
     ttl: int,
+    fixed_schema: pa.Schema,
     stamp: Callable[[Sequence[dict[str, Any]]], None] | None = None,
 ) -> None:
     """:func:`emit_page` for archived data, which is immutable and so cacheable.
@@ -162,7 +168,5 @@ def emit_archive_page(
         stamp(rows)
     state.cursor = cursor or ""
     state.done = cursor is None
-    out.emit(
-        batch_from_rows(rows, params.output_schema),
-        cache_control=CacheControl(ttl=ttl, stale_if_error=STALE_IF_ERROR),
-    )
+    batch, _ = build_filtered(params, rows, fixed_schema)
+    out.emit(batch, cache_control=CacheControl(ttl=ttl, stale_if_error=STALE_IF_ERROR))

@@ -59,6 +59,13 @@ class AllSeriesFunction(TableFunctionGenerator[None, None]):
         #: `WHERE category = 'Crypto'` — a 71x saving on the catalog's own
         #: headline query. Not exact: DuckDB still re-checks the predicate.
         filter_pushdown = True
+        # Delivers `current_pushdown_filters` to process(), which is what the
+        # API-side translation reads. The framework also wraps the collector to
+        # filter emitted batches — harmless here, because `build_filtered` has
+        # already applied the same predicates, and necessary to ask for because
+        # without this flag the filters never arrive at all while the engine
+        # still drops its own filter above the scan.
+        auto_apply_filters = True
         tags = docs(
             category="reference",
             result_schema=SERIES_SCHEMA,

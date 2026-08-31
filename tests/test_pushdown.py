@@ -25,7 +25,12 @@ from vgi_kalshi.schemas import MARKET_SCHEMA, batch_from_rows
 
 
 class _Filters:
-    """The slice of PushdownFilters this code actually uses."""
+    """The slice of PushdownFilters this code actually uses.
+
+    `evaluate` returns an all-true mask: these cases exercise how a predicate
+    becomes a query parameter, not how rows are filtered. The filtering itself
+    is covered by `TestFiltersAreActuallyApplied`.
+    """
 
     def __init__(self, constants: dict[str, str]) -> None:
         self._constants = constants
@@ -33,6 +38,12 @@ class _Filters:
     def get_column_constant(self, column_name: str) -> pa.Scalar[Any] | None:
         value = self._constants.get(column_name)
         return pa.scalar(value) if value is not None else None
+
+    def get_column_bounds(self, column_name: str) -> None:
+        return None
+
+    def evaluate(self, batch: pa.RecordBatch) -> pa.BooleanArray:
+        return pa.array([True] * batch.num_rows, type=pa.bool_())
 
 
 @dataclass
@@ -110,11 +121,36 @@ class TestArgumentPrecedence:
 class TestProjection:
     """A narrow SELECT must stop building the columns it did not ask for."""
 
-    def test_declared_on_every_function(self) -> None:
+    def test_filtering_functions_also_project(self) -> None:
+        """Projection is a prerequisite for filtering correctly, not a conflict.
+
+        A pushed filter carries a `column_index` and is evaluated positionally.
+        That index is relative to the projection DuckDB asked for, so a worker
+        that filters must emit exactly that projection — evaluating against the
+        full schema applied a filter on `volume_24h_fp` (index 0 of the
+        projection) to `ticker`, and every row passed. DuckDB never projects
+        away a column it filters on, so the projected batch always has what the
+        predicate needs.
+        """
         from vgi_kalshi.worker import _KALSHI_CATALOG
 
-        for function in _KALSHI_CATALOG.schemas[0].functions:
-            assert function.get_metadata().projection_pushdown is True, function.Meta.name
+        missing = [
+            f.Meta.name
+            for f in _KALSHI_CATALOG.schemas[0].functions
+            if f.get_metadata().filter_pushdown and not f.get_metadata().projection_pushdown
+        ]
+        assert missing == [], f"filter without projection compares the wrong column: {missing}"
+
+    def test_projection_is_on_wherever_it_is_safe(self) -> None:
+        """Every function that does not filter should still project."""
+        from vgi_kalshi.worker import _KALSHI_CATALOG
+
+        missing = [
+            f.Meta.name
+            for f in _KALSHI_CATALOG.schemas[0].functions
+            if not f.get_metadata().filter_pushdown and not f.get_metadata().projection_pushdown
+        ]
+        assert missing == [], f"these could project and do not: {missing}"
 
     def test_a_projected_schema_builds_only_its_columns(self) -> None:
         projected = pa.schema([MARKET_SCHEMA.field("ticker"), MARKET_SCHEMA.field("status")])
@@ -143,6 +179,9 @@ class _RangeFilters:
 
     def get_column_constant(self, column_name: str) -> None:
         return None
+
+    def evaluate(self, batch: pa.RecordBatch) -> pa.BooleanArray:
+        return pa.array([True] * batch.num_rows, type=pa.bool_())
 
     def get_column_bounds(self, column_name: str) -> _Bounds | None:
         return self._bounds if column_name == self._column else None
@@ -227,12 +266,22 @@ class TestPushdownCoverage:
         ]
         assert missing == [], f"these have a filterable endpoint but push nothing: {missing}"
 
-    def test_projection_is_universal(self) -> None:
-        """Nothing here has a reason to build columns nobody asked for."""
+    def test_filtering_functions_ask_for_their_filters(self) -> None:
+        """`filter_pushdown` alone does not deliver them; `auto_apply_filters` does.
+
+        Without the flag the filters never reach `process()` — while the engine
+        still drops its own filter above the scan. The result is a scan that
+        silently ignores every predicate, which is how
+        `WHERE volume_24h_fp > 999999999` came to return rows.
+        """
         from vgi_kalshi.worker import _KALSHI_CATALOG
 
-        for f in _KALSHI_CATALOG.schemas[0].functions:
-            assert f.get_metadata().projection_pushdown is True, f.Meta.name
+        missing = [
+            f.Meta.name
+            for f in _KALSHI_CATALOG.schemas[0].functions
+            if f.get_metadata().filter_pushdown and not getattr(f.Meta, "auto_apply_filters", False)
+        ]
+        assert missing == [], f"declare filter pushdown but never receive filters: {missing}"
 
     def test_nothing_claims_exact_application(self) -> None:
         """We translate some predicates, never all, so DuckDB must re-check."""

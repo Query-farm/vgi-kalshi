@@ -15,10 +15,15 @@ strictly more.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import datetime
 from typing import Any
 
+import pyarrow as pa
+import pyarrow.compute as pc
 from vgi.table_function import ProcessParams
+
+from vgi_kalshi.schemas import batch_from_rows
 
 
 def _filters(params: ProcessParams[Any]) -> Any:
@@ -68,3 +73,87 @@ def epoch_bounds(params: ProcessParams[Any], column: str) -> tuple[int | None, i
     low = seconds(getattr(bounds, "min_value", None), widen=0)
     high = seconds(getattr(bounds, "max_value", None), widen=1)
     return low, high
+
+
+def _widen_decimals(batch: pa.RecordBatch) -> pa.RecordBatch:
+    """Widen decimal columns so an integer literal can be compared against them.
+
+    Arrow refuses ``decimal128(18, 2) > 999999999`` outright — *"Precision is
+    not great enough for the result. It should be at least 21"* — because the
+    comparison's result type does not fit. Every money and count column here is
+    a decimal and every SQL literal is an integer, so this is not an edge case:
+    it is what ``WHERE volume_24h_fp > 100`` does.
+
+    Widening to ``decimal128(38, scale)`` makes room for the comparison and is
+    exact — the scale is unchanged, so no value is rounded. The widened batch is
+    used only to compute the mask; the rows returned are the originals.
+    """
+    fields: list[pa.Field] = []
+    columns: list[pa.Array] = []
+    for index, field in enumerate(batch.schema):
+        column = batch.column(index)
+        if pa.types.is_decimal(field.type) and field.type.precision < 38:
+            wider = pa.decimal128(38, field.type.scale)
+            column, field = column.cast(wider), field.with_type(wider)
+        fields.append(field)
+        columns.append(column)
+    return pa.RecordBatch.from_arrays(columns, schema=pa.schema(fields))
+
+
+def build_filtered(
+    params: ProcessParams[Any],
+    rows: Sequence[dict[str, Any]],
+    fixed_schema: pa.Schema,
+    parent_rows: Sequence[int] | None = None,
+) -> tuple[pa.RecordBatch, list[int]]:
+    """Build the output batch, applying every pushed filter to it.
+
+    **Declaring ``filter_pushdown`` is a promise to apply the filters.** The
+    engine drops its own filter above the scan once a function accepts pushdown,
+    so a predicate the worker receives and ignores is not re-checked by anyone —
+    it simply stops being applied. Translating *some* predicates into Kalshi
+    query parameters and leaving the rest is therefore not a partial
+    optimisation, it is a wrong answer:
+
+        SELECT ticker FROM markets('KXBTCD') WHERE volume_24h_fp > 999999999
+
+    returned rows. Every one of them had volume zero.
+
+    Everything is evaluated against ``params.output_schema`` — the *projected*
+    schema — and that is load-bearing rather than incidental. A pushed filter
+    carries a ``column_index``, and ``ConstantFilter.evaluate`` reads
+    ``batch.column(column_index)`` positionally. The index is relative to the
+    projection DuckDB asked the scan for, so evaluating against any other column
+    order compares the wrong column: against the full 27-column market schema,
+    a filter on ``volume_24h_fp`` (index 0 of the projection) was applied to
+    ``ticker``, and every row passed.
+
+    That is also why projection pushdown must stay **on** wherever filters are
+    accepted. DuckDB does not project away a column it is filtering on — it
+    needs that column from the scan — so the projected batch always holds what
+    the predicate references.
+
+    Args:
+        params: The tick's parameters, carrying the filters and the projection.
+        rows: Decoded API rows, keyed by the schema's column names.
+        fixed_schema: Unused; kept so every call site reads the same way.
+        parent_rows: 1->N provenance, filtered in lockstep with the rows so a
+            blended function's mapping survives.
+
+    Returns:
+        The projected, filtered batch and its surviving ``parent_rows``.
+    """
+    del fixed_schema
+    filters = _filters(params)
+    if filters is None:
+        return batch_from_rows(rows, params.output_schema), list(parent_rows or [])
+
+    batch = batch_from_rows(rows, params.output_schema)
+    mask = filters.evaluate(_widen_decimals(batch))
+    projected = pc.filter(batch, mask)
+    if parent_rows is None:
+        return projected, []
+    # `pc.filter` drops rows whose mask is null, which is the SQL meaning of a
+    # predicate that did not evaluate to true; provenance follows the same rule.
+    keep = mask.to_pylist()
+    return projected, [parent for parent, ok in zip(parent_rows, keep, strict=True) if ok]

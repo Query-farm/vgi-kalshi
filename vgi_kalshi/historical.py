@@ -36,7 +36,7 @@ from vgi_kalshi import kalshi_api as api
 from vgi_kalshi.kalshi_api import STALE_IF_ERROR, CacheHint
 from vgi_kalshi.meta import docs, examples
 from vgi_kalshi.paging import PagedScanState, emit_archive_page
-from vgi_kalshi.pushdown import epoch_bounds, equality
+from vgi_kalshi.pushdown import build_filtered, epoch_bounds, equality
 from vgi_kalshi.schemas import (
     CANDLESTICK_SCHEMA,
     HISTORICAL_CUTOFF_SCHEMA,
@@ -63,16 +63,19 @@ def _archive_cache_control() -> CacheControl:
 
 def _emit(
     out: OutputCollector,
+    params: ProcessParams[Any],
     schema: pa.Schema,
     rows: Sequence[dict[str, Any]],
     parent_rows: Sequence[int],
 ) -> None:
-    """Emit one 1->N batch with provenance and the archive's cache policy."""
-    cast("VgiOutputCollector", out).emit(
-        batch_from_rows(rows, schema),
-        parent_rows=list(parent_rows),
-        cache_control=_archive_cache_control(),
-    )
+    """Emit one 1->N batch with provenance, filters applied, and the archive TTL.
+
+    ``schema`` is the full output schema; pushed filters are applied against it
+    and the projection follows. See :func:`vgi_kalshi.pushdown.build_filtered`
+    for why a function that accepts pushdown must do the applying itself.
+    """
+    batch, parents = build_filtered(params, rows, schema, parent_rows)
+    cast("VgiOutputCollector", out).emit(batch, parent_rows=parents, cache_control=_archive_cache_control())
 
 
 @dataclass(slots=True, frozen=True, kw_only=True)
@@ -102,6 +105,13 @@ class HistoricalMarketsFunction(TableFunctionGenerator[HistoricalMarketsArgs, Pa
         required_secrets = [SecretLookupEntry(secret_type=auth.SECRET_TYPE)]
         projection_pushdown = True
         filter_pushdown = True
+        # Delivers `current_pushdown_filters` to process(), which is what the
+        # API-side translation reads. The framework also wraps the collector to
+        # filter emitted batches — harmless here, because `build_filtered` has
+        # already applied the same predicates, and necessary to ask for because
+        # without this flag the filters never arrive at all while the engine
+        # still drops its own filter above the scan.
+        auto_apply_filters = True
         tags = docs(
             category="historical",
             result_schema=HISTORICAL_MARKET_SCHEMA,
@@ -180,6 +190,7 @@ class HistoricalMarketsFunction(TableFunctionGenerator[HistoricalMarketsArgs, Pa
             out,
             path="/historical/markets",
             key="markets",
+            fixed_schema=cls.FIXED_SCHEMA,
             query={
                 "series_ticker": params.args.series_ticker,
                 "event_ticker": params.args.event_ticker or equality(params, "event_ticker"),
@@ -217,6 +228,13 @@ class HistoricalTradesFunction(RowTransformFunction[HistoricalTradesArgs]):
         required_secrets = [SecretLookupEntry(secret_type=auth.SECRET_TYPE)]
         projection_pushdown = True
         filter_pushdown = True
+        # Delivers `current_pushdown_filters` to process(), which is what the
+        # API-side translation reads. The framework also wraps the collector to
+        # filter emitted batches — harmless here, because `build_filtered` has
+        # already applied the same predicates, and necessary to ask for because
+        # without this flag the filters never arrive at all while the engine
+        # still drops its own filter above the scan.
+        auto_apply_filters = True
         tags = docs(
             category="historical",
             result_schema=TRADE_SCHEMA,
@@ -298,7 +316,7 @@ class HistoricalTradesFunction(RowTransformFunction[HistoricalTradesArgs]):
                 )
                 rows.extend(found)
                 parents.extend([index] * len(found))
-        _emit(out, params.output_schema, rows, parents)
+        _emit(out, params, cls.FIXED_SCHEMA, rows, parents)
 
 
 @dataclass(slots=True, frozen=True, kw_only=True)
@@ -341,6 +359,13 @@ class HistoricalCandlesticksFunction(RowTransformFunction[HistoricalCandlestickA
         required_secrets = [SecretLookupEntry(secret_type=auth.SECRET_TYPE)]
         projection_pushdown = True
         filter_pushdown = True
+        # Delivers `current_pushdown_filters` to process(), which is what the
+        # API-side translation reads. The framework also wraps the collector to
+        # filter emitted batches — harmless here, because `build_filtered` has
+        # already applied the same predicates, and necessary to ask for because
+        # without this flag the filters never arrive at all while the engine
+        # still drops its own filter above the scan.
+        auto_apply_filters = True
         tags = docs(
             category="historical",
             result_schema=CANDLESTICK_SCHEMA,
@@ -432,7 +457,7 @@ class HistoricalCandlesticksFunction(RowTransformFunction[HistoricalCandlestickA
                 flat = flatten_candlesticks(str(ticker), candles)
                 rows.extend(flat)
                 parents.extend([index] * len(flat))
-        _emit(out, params.output_schema, rows, parents)
+        _emit(out, params, cls.FIXED_SCHEMA, rows, parents)
 
 
 def _cutoff_epoch(client: Any, credentials: Any) -> int:

@@ -56,7 +56,7 @@ from vgi_kalshi import kalshi_api as api
 from vgi_kalshi.kalshi_api import STALE_IF_ERROR, CacheHint
 from vgi_kalshi.meta import docs, examples
 from vgi_kalshi.paging import PagedScanState, emit_page
-from vgi_kalshi.pushdown import epoch_bounds, equality
+from vgi_kalshi.pushdown import build_filtered, epoch_bounds, equality
 from vgi_kalshi.schemas import (
     CANDLESTICK_SCHEMA,
     EVENT_METADATA_SCHEMA,
@@ -64,7 +64,6 @@ from vgi_kalshi.schemas import (
     MARKET_SCHEMA,
     ORDERBOOK_SCHEMA,
     TRADE_SCHEMA,
-    batch_from_rows,
     flatten_candlesticks,
     flatten_event_metadata,
     flatten_orderbook,
@@ -190,6 +189,7 @@ def _cap_depth(levels: list[dict[str, Any]], depth: int) -> list[dict[str, Any]]
 
 def _emit_fanout(
     out: OutputCollector,
+    params: ProcessParams[Any],
     schema: pa.Schema,
     rows: Sequence[dict[str, Any]],
     parent_rows: Sequence[int],
@@ -201,13 +201,14 @@ def _emit_fanout(
     that produced output row ``i``. Cache metadata rides on the first emitted
     batch, which is this one — each of these functions emits exactly once.
 
-    ``schema`` is the caller's ``params.output_schema``, which is the *projected*
-    schema: with ``projection_pushdown`` declared, a ``SELECT ticker`` narrows it
-    to one column and only that column is built. Rows are dicts, so the columns
-    that were projected away simply are not read.
+    ``schema`` is the function's full output schema; the projection in
+    ``params.output_schema`` is applied at the end. Any pushed filter is applied
+    here too, and ``parent_rows`` is filtered in lockstep — the engine drops its
+    own filter once a function accepts pushdown, so a predicate this worker does
+    not apply is not applied at all.
     """
-    batch = batch_from_rows(rows, schema)
-    cast("VgiOutputCollector", out).emit(batch, parent_rows=list(parent_rows), cache_control=cache_control)
+    batch, parents = build_filtered(params, rows, schema, parent_rows)
+    cast("VgiOutputCollector", out).emit(batch, parent_rows=parents, cache_control=cache_control)
 
 
 @dataclass(slots=True, frozen=True, kw_only=True)
@@ -316,6 +317,13 @@ class MarketsFunction(TableFunctionGenerator[MarketsArgs, PagedScanState]):
         #: `filters_exactly_applied` stays False on purpose: only some predicates
         #: become Kalshi query parameters, so DuckDB must re-check them all.
         filter_pushdown = True
+        # Delivers `current_pushdown_filters` to process(), which is what the
+        # API-side translation reads. The framework also wraps the collector to
+        # filter emitted batches — harmless here, because `build_filtered` has
+        # already applied the same predicates, and necessary to ask for because
+        # without this flag the filters never arrive at all while the engine
+        # still drops its own filter above the scan.
+        auto_apply_filters = True
         tags = MARKETS_DOCS
         examples = [
             FunctionExample(
@@ -360,6 +368,7 @@ class MarketsFunction(TableFunctionGenerator[MarketsArgs, PagedScanState]):
             out,
             path="/markets",
             key="markets",
+            fixed_schema=cls.FIXED_SCHEMA,
             query={
                 "series_ticker": params.args.series_ticker,
                 "event_ticker": params.args.event_ticker or pushed_event,
@@ -460,7 +469,8 @@ class MarketFunction(RowTransformFunction[TickerArgs]):
         # strict identity map; provenance is carried for the same reason.
         _emit_fanout(
             out,
-            params.output_schema,
+            params,
+            cls.FIXED_SCHEMA,
             rows,
             parents,
             _opt_in_cache_control(params.args.cache_ttl, per_value=True),
@@ -580,7 +590,8 @@ class OrderbookFunction(RowTransformFunction[OrderbookArgs]):
                 parents.extend([index] * len(levels))
         _emit_fanout(
             out,
-            params.output_schema,
+            params,
+            cls.FIXED_SCHEMA,
             rows,
             parents,
             _opt_in_cache_control(params.args.cache_ttl, per_value=True),
@@ -637,6 +648,13 @@ class CandlesticksFunction(RowTransformFunction[CandlestickArgs]):
         required_secrets = [SecretLookupEntry(secret_type=auth.SECRET_TYPE)]
         projection_pushdown = True
         filter_pushdown = True
+        # Delivers `current_pushdown_filters` to process(), which is what the
+        # API-side translation reads. The framework also wraps the collector to
+        # filter emitted batches — harmless here, because `build_filtered` has
+        # already applied the same predicates, and necessary to ask for because
+        # without this flag the filters never arrive at all while the engine
+        # still drops its own filter above the scan.
+        auto_apply_filters = True
         tags = docs(
             category="history",
             result_schema=CANDLESTICK_SCHEMA,
@@ -744,7 +762,8 @@ class CandlesticksFunction(RowTransformFunction[CandlestickArgs]):
                 parents.extend([index] * len(flat))
         _emit_fanout(
             out,
-            params.output_schema,
+            params,
+            cls.FIXED_SCHEMA,
             rows,
             parents,
             _candlestick_cache_control(end_ts=end_ts, period_interval=params.args.period_interval, now=now),
@@ -789,6 +808,13 @@ class TradesFunction(RowTransformFunction[TradesArgs]):
         required_secrets = [SecretLookupEntry(secret_type=auth.SECRET_TYPE)]
         projection_pushdown = True
         filter_pushdown = True
+        # Delivers `current_pushdown_filters` to process(), which is what the
+        # API-side translation reads. The framework also wraps the collector to
+        # filter emitted batches — harmless here, because `build_filtered` has
+        # already applied the same predicates, and necessary to ask for because
+        # without this flag the filters never arrive at all while the engine
+        # still drops its own filter above the scan.
+        auto_apply_filters = True
         tags = docs(
             category="history",
             result_schema=TRADE_SCHEMA,
@@ -882,7 +908,8 @@ class TradesFunction(RowTransformFunction[TradesArgs]):
                 parents.extend([index] * len(found))
         _emit_fanout(
             out,
-            params.output_schema,
+            params,
+            cls.FIXED_SCHEMA,
             rows,
             parents,
             _origin_cache_control(hint) or _opt_in_cache_control(params.args.cache_ttl, per_value=True),
@@ -967,6 +994,13 @@ class EventsFunction(TableFunctionGenerator[EventsArgs, PagedScanState]):
         required_secrets = [SecretLookupEntry(secret_type=auth.SECRET_TYPE)]
         projection_pushdown = True
         filter_pushdown = True
+        # Delivers `current_pushdown_filters` to process(), which is what the
+        # API-side translation reads. The framework also wraps the collector to
+        # filter emitted batches — harmless here, because `build_filtered` has
+        # already applied the same predicates, and necessary to ask for because
+        # without this flag the filters never arrive at all while the engine
+        # still drops its own filter above the scan.
+        auto_apply_filters = True
         tags = EVENTS_DOCS
         examples = [
             FunctionExample(
@@ -1000,6 +1034,7 @@ class EventsFunction(TableFunctionGenerator[EventsArgs, PagedScanState]):
             out,
             path="/events",
             key="events",
+            fixed_schema=cls.FIXED_SCHEMA,
             query={
                 "series_ticker": params.args.series_ticker,
                 # `/events` filters on the same word its `status` column
@@ -1102,7 +1137,8 @@ class EventFunction(RowTransformFunction[EventTickerArgs]):
                 parents.append(index)
         _emit_fanout(
             out,
-            params.output_schema,
+            params,
+            cls.FIXED_SCHEMA,
             rows,
             parents,
             _origin_cache_control(hint) or _opt_in_cache_control(params.args.cache_ttl, per_value=True),
@@ -1196,7 +1232,8 @@ class EventMetadataFunction(RowTransformFunction[EventTickerArgs]):
                 parents.extend([index] * len(found))
         _emit_fanout(
             out,
-            params.output_schema,
+            params,
+            cls.FIXED_SCHEMA,
             rows,
             parents,
             _origin_cache_control(hint) or _opt_in_cache_control(params.args.cache_ttl, per_value=True),
