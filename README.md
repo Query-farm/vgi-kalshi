@@ -153,6 +153,25 @@ the ticker keeps a naive `SELECT *` honest. A paged call that still has not
 reached the end after `MAX_PAGES` raises `KalshiPageLimitError` rather than
 returning a prefix that reads like a complete result.
 
+**Strike ladders are readable as numbers.** A series like `KXWTI` lists one
+market per threshold, and `strike_type` says how to read the bounds: `greater`
+sets `floor_strike`, `less` sets `cap_strike`, `between` sets both. Units are
+the series' own — dollars for a price market, thousands of barrels for an
+inventory one. Each row is `P(settles above floor_strike)`, so a ladder in
+strike order is a survival curve:
+
+```sql
+SELECT floor_strike, (yes_bid_dollars + yes_ask_dollars) / 2 AS implied_probability
+FROM kalshi.markets('KXWTI', status => 'open')
+WHERE strike_type = 'greater' AND floor_strike IS NOT NULL
+ORDER BY floor_strike;
+```
+
+These are `DECIMAL`, not `DOUBLE`, because a ladder is something you group and
+join on and float equality on `87299.99` does not hold. Do not recover the
+threshold from the ticker or the subtitle: `subtitle` is not always populated,
+and a ticker is not a contract.
+
 **Money is `DECIMAL`, never `DOUBLE`.** Kalshi sends prices and counts as
 fixed-point *strings* (`"0.7000"`, `"136798.00"`) in two flavours: `*_dollars`
 at 4dp and `*_fp` at 2dp. They map to `decimal128(18,4)` and `decimal128(18,2)`.
@@ -441,12 +460,12 @@ say nothing about the code.
 It earns the wait. The behavioural tier has caught, on separate runs, a scan
 that wedged the client uncancellably, a timestamp that crashed every consumer
 of a row, and a shipped example that could not bind — none of which any of the
-198 offline tests could see.
+231 offline tests could see.
 
 ## Tests
 
 ```bash
-pytest              # 223 offline tests
+pytest              # 231 offline tests
 pytest -m live      # 31 tests against the public API
 ```
 
