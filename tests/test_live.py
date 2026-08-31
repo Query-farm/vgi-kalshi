@@ -119,11 +119,26 @@ class TestMarketStatus:
     MAPPING = [("unopened", "initialized"), ("open", "active"), ("settled", "finalized")]
 
     @pytest.mark.parametrize(("filter_value", "column_value"), MAPPING)
-    def test_filter_maps_to_its_column_value(self, filter_value: str, column_value: str) -> None:
-        rows = api.markets(SERIES, status=filter_value, limit=5)
+    def test_filter_selects_its_column_value(self, filter_value: str, column_value: str) -> None:
+        """The filter must *select* the mapped status; it need not select only it.
+
+        Asserting equality here was flaky, and the strictness was not the
+        property the code depends on. Kalshi's markets change state constantly —
+        a KXBTCD market closes every hour — so a row selected as `open` can
+        already read `closed` by the time the response is built. Extra rows are
+        harmless: `filters_exactly_applied` is False, so DuckDB re-checks the
+        predicate against everything returned. Rows *missing* would be the bug,
+        and that direction is asserted here and, exhaustively over one complete
+        event, in `TestStatusPushdown`.
+        """
+        rows = api.markets(SERIES, status=filter_value, limit=25)
         if not rows:
             pytest.skip(f"no {filter_value} markets in {SERIES} right now")
-        assert {row["status"] for row in rows} == {column_value}
+        seen = {row["status"] for row in rows}
+        assert column_value in seen, (
+            f"status => {filter_value!r} returned none of the {column_value!r} markets "
+            f"it is mapped to; it returned {sorted(seen)}"
+        )
 
     @pytest.mark.parametrize("status", ["active", "finalized", "nonsense"])
     def test_a_column_value_is_not_a_valid_filter(self, status: str) -> None:

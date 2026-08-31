@@ -180,3 +180,44 @@ class TestTradesAndEvents:
             [{"name": "CF Benchmarks", "url": "https://example.com"}],
             None,
         ]
+
+
+class TestUnrepresentableTimestamps:
+    """A date Python cannot hold must become NULL, never an exception.
+
+    Found by vgi-lint's execute tier, not by any offline test: a far-future
+    sentinel arrived as an epoch integer and killed an entire `event` scan with
+    "OverflowError: date value out of range". `to_decimal` was made total for
+    exactly this reason; `to_timestamp` was not, and the omission was invisible
+    until a real payload hit it.
+    """
+
+    @pytest.mark.parametrize(
+        "raw",
+        [
+            253402300800,  # year 10000, one second past datetime's ceiling
+            99999999999999,  # far beyond it
+            -99999999999999,  # and below the floor
+        ],
+    )
+    def test_out_of_range_epoch_is_null(self, raw: int) -> None:
+        assert to_timestamp(raw) is None
+
+    def test_a_bad_date_does_not_kill_its_batch(self) -> None:
+        """One unrepresentable row must not take the other rows with it."""
+        rows = [
+            {"event_ticker": "GOOD", "strike_date": "2026-09-04T21:00:00Z"},
+            {"event_ticker": "BAD", "strike_date": 253402300800},
+        ]
+        batch = batch_from_rows(rows, EVENT_SCHEMA)
+        assert batch.num_rows == 2
+        assert batch.column("strike_date").to_pylist()[1] is None
+        assert batch.column("strike_date").to_pylist()[0] is not None
+
+    def test_booleans_are_not_epochs(self) -> None:
+        """`bool` is an `int` in Python, so True would otherwise be 1970-01-01."""
+        assert to_timestamp(True) is None
+
+    @pytest.mark.parametrize("raw", ["2026-08-31T03:11:48.484035Z", 1788141600])
+    def test_representable_values_still_parse(self, raw: object) -> None:
+        assert to_timestamp(raw) is not None

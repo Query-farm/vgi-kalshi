@@ -66,19 +66,21 @@ _EXAMPLE_QUERIES = examples(
         "ORDER BY m.ticker, c.end_period_ts",
     ),
     (
-        "The most recent trades on one market",
-        "SELECT created_time, taker_side, yes_price_dollars, count_fp "
-        "FROM kalshi.main.trades('KXBTCD-26AUG3117-T87749.99', max_rows => 100) "
-        "ORDER BY created_time DESC",
+        "The most recent trades on the busiest open market in a series",
+        "SELECT t.created_time, t.taker_side, t.yes_price_dollars, t.count_fp FROM ("
+        "SELECT ticker FROM kalshi.main.markets('KXBTCD') WHERE status = 'active' "
+        "ORDER BY volume_24h_fp DESC LIMIT 1) m, "
+        "LATERAL kalshi.main.trades(m.ticker, max_rows => 100) t "
+        "ORDER BY t.created_time DESC",
     ),
     (
         "Bitcoin daily events by strike date",
         "SELECT event_ticker, title, strike_date FROM kalshi.main.events('KXBTCD') ORDER BY strike_date",
     ),
     (
-        "One market's current quote by ticker",
+        "The busiest open market's current quote",
         "SELECT ticker, status, yes_bid_dollars, yes_ask_dollars "
-        "FROM kalshi.main.market('KXBTCD-26AUG3117-T87749.99')",
+        "FROM kalshi.main.market((SELECT ticker FROM kalshi.main.markets('KXBTCD') WHERE status = 'active' ORDER BY volume_24h_fp DESC LIMIT 1))",
     ),
     (
         "Crypto series read from the scan function behind the table",

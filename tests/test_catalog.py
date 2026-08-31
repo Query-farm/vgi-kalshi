@@ -304,3 +304,30 @@ class TestNoDeadApiSurface:
         """Guard the guard: an obviously-unreachable name must be detected."""
         surface = "".join((PACKAGE / name).read_text() for name in self.SURFACE)
         assert "api.definitely_not_a_real_endpoint(" not in surface
+
+
+class TestExamplesDoNotRot:
+    """A live example must not hardcode a market ticker.
+
+    Kalshi contracts expire. An example naming one works until that contract
+    settles and then quietly returns nothing — which is how `trades` shipped an
+    example that vgi-lint's execute tier flagged as empty. Live examples derive
+    their ticker from a query instead. Archived tickers are exempt: the archive
+    is immutable, so a settled ticker there is permanent and deterministic.
+    """
+
+    #: A Kalshi market ticker: SERIES-EVENTDATE-STRIKE.
+    _MARKET_TICKER = re.compile(r"'[A-Z0-9]+-[0-9]{2}[A-Z]{3}[0-9]{2,4}-[TB][0-9.]+'")
+
+    def test_no_live_example_hardcodes_a_market_ticker(self) -> None:
+        offenders = [
+            sql for sql in _shipped_sql() if "historical" not in sql and self._MARKET_TICKER.search(sql)
+        ]
+        assert offenders == [], (
+            "these examples name a contract that will expire; derive the ticker from "
+            f"a subquery instead: {offenders}"
+        )
+
+    def test_the_pattern_matches_a_real_ticker(self) -> None:
+        """Guard the guard: a regex that matches nothing would pass vacuously."""
+        assert self._MARKET_TICKER.search("FROM f('KXBTCD-26AUG3117-T87749.99')")

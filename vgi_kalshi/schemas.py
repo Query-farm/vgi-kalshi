@@ -76,14 +76,28 @@ def series_of(event_ticker: Any) -> str | None:
 
 
 def to_timestamp(value: Any) -> datetime | None:
-    """Parse an RFC 3339 string, or an epoch-seconds int, into an aware UTC datetime."""
+    """Parse an RFC 3339 string, or an epoch-seconds number, into an aware UTC datetime.
+
+    Total by construction, like :func:`to_decimal`: anything unrepresentable
+    becomes NULL rather than raising. Python's ``datetime`` only spans years
+    1 to 9999, and Kalshi does emit values outside that — a far-future sentinel
+    reached this code as an epoch integer and took down an entire scan with
+    ``OverflowError: date value out of range``. Which of ``ValueError`` or
+    ``OverflowError`` you get is platform-dependent, and ``fromtimestamp`` can
+    raise ``OSError`` for extreme inputs, so all three are caught.
+    """
     if value is None or value == "":
         return None
+    if isinstance(value, bool):
+        return None
     if isinstance(value, (int, float)):
-        return datetime.fromtimestamp(float(value), tz=UTC)
+        try:
+            return datetime.fromtimestamp(float(value), tz=UTC)
+        except (ValueError, OverflowError, OSError):
+            return None
     try:
         parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-    except ValueError:
+    except (ValueError, OverflowError):
         return None
     return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
 
