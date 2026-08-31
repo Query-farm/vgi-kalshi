@@ -22,6 +22,7 @@ blended and stay composable.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -48,6 +49,27 @@ class PagedScanState(ArrowSerializableDataclass):
 
     cursor: str = ""
     done: bool = False
+    #: The query the walk started with, frozen as JSON on the first page.
+    #: ``current_pushdown_filters`` is refreshed before every ``process()``
+    #: tick, so a scan that recomputed its parameters each time could resume an
+    #: opaque cursor under different ones. Kalshi's cursor encodes the query it
+    #: was minted for; continuing it with a changed query is undefined, and the
+    #: failure would be silently wrong rows rather than an error.
+    query_json: str = ""
+
+
+def _frozen_query(state: PagedScanState, query: dict[str, Any]) -> dict[str, Any]:
+    """The query this walk began with, so every page uses the same one.
+
+    A cursor is only meaningful against the query that produced it. Pushdown
+    filters can be refreshed between ticks, so the first page's query is frozen
+    into the scan state and replayed for the rest of the walk — a mid-walk
+    change is dropped rather than allowed to corrupt the continuation.
+    """
+    if state.cursor and state.query_json:
+        return dict(json.loads(state.query_json))
+    state.query_json = json.dumps(query, sort_keys=True, default=str)
+    return query
 
 
 def emit_page(
@@ -82,6 +104,7 @@ def emit_page(
     if state.done:
         out.finish()
         return
+    query = _frozen_query(state, query)
     hint = CacheHint()
     rows, cursor = api.page(
         path,
@@ -127,6 +150,7 @@ def emit_archive_page(
     if state.done:
         out.finish()
         return
+    query = _frozen_query(state, query)
     rows, cursor = api.page(
         path,
         key,

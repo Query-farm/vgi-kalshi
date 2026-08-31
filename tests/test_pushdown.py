@@ -240,3 +240,81 @@ class TestPushdownCoverage:
 
         for f in _KALSHI_CATALOG.schemas[0].functions:
             assert f.get_metadata().filters_exactly_applied is False, f.Meta.name
+
+
+class TestCursorStability:
+    """A cursor is only meaningful against the query that minted it.
+
+    `current_pushdown_filters` is refreshed before every `process()` tick (for
+    Top-N, among other things). A scan that recomputed its query parameters each
+    time would resume an opaque Kalshi cursor under *different* parameters — and
+    Kalshi's cursor encodes the query it belongs to, so the result would be
+    silently wrong rows rather than an error.
+    """
+
+    @staticmethod
+    def _run(filters_by_tick: list[Any]) -> list[dict[str, str]]:
+        """Drive a paged scan whose pushed filters change between ticks."""
+        import httpx
+
+        import vgi_kalshi.kalshi_api as api
+        from vgi_kalshi.markets import MarketsFunction
+        from vgi_kalshi.schemas import MARKET_SCHEMA
+
+        requests: list[dict[str, str]] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            requests.append(dict(request.url.params))
+            body: dict[str, Any] = {"markets": [{"ticker": f"T{len(requests)}"}]}
+            if len(requests) < len(filters_by_tick):
+                body["cursor"] = f"c{len(requests)}"
+            return httpx.Response(200, json=body)
+
+        class Out:
+            done = False
+
+            def emit(self, batch: Any, **kwargs: Any) -> None:
+                pass
+
+            def finish(self) -> None:
+                self.done = True
+
+        class Params:
+            args = MarketsArgs(series_ticker="KXBTCD")
+            output_schema = MARKET_SCHEMA
+            secrets = None
+            attach_opaque_data = None
+            current_pushdown_filters = None
+
+        original = api.open_client
+        api.open_client = lambda: httpx.Client(transport=httpx.MockTransport(handler))
+        try:
+            state, out = MarketsFunction.initial_state(Params()), Out()
+            for tick_filters in filters_by_tick:
+                Params.current_pushdown_filters = tick_filters
+                MarketsFunction.process(Params(), state, out)
+        finally:
+            api.open_client = original
+        return requests
+
+    def test_a_mid_walk_filter_change_does_not_alter_the_query(self) -> None:
+        requests = self._run(
+            [
+                _Filters({"event_ticker": "FIRST"}),
+                _Filters({"event_ticker": "CHANGED"}),
+                _Filters({"event_ticker": "CHANGED_AGAIN"}),
+            ]
+        )
+        assert len(requests) == 3
+        events = [r.get("event_ticker") for r in requests]
+        assert events == ["FIRST", "FIRST", "FIRST"], f"the walk changed query mid-cursor: {events}"
+
+    def test_later_pages_still_carry_the_cursor(self) -> None:
+        requests = self._run([_Filters({"event_ticker": "E"})] * 3)
+        assert requests[0].get("cursor") is None
+        assert [r.get("cursor") for r in requests[1:]] == ["c1", "c2"]
+
+    def test_the_first_page_uses_the_filters_it_was_given(self) -> None:
+        """Freezing must not mean ignoring — the first tick still pushes."""
+        requests = self._run([_Filters({"event_ticker": "E"})])
+        assert requests[0].get("event_ticker") == "E"
