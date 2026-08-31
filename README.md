@@ -146,10 +146,22 @@ advertises against the right vocabulary for its position, offline;
 
 ## Design notes
 
-**Every function takes a required key.** An unfiltered scan of `/markets` or
-`/markets/trades` pages past 400,000 rows — ~398,000 of them zero-volume
-`KXMVECROSSCATEGORY` parlay combos — and takes minutes. Requiring the series or
-the ticker keeps a naive `SELECT *` honest. A paged call that still has not
+**Every function takes a key, but `markets('')` scans the whole exchange.**
+Kalshi lists ~400,000 multivariate parlay combinations as ordinary markets; they
+sort first and swamp everything real, which is why an unfiltered scan used to be
+a mistake. `exclude_parlays` (on by default) drops them at the API, leaving about
+99,000 open markets across ~3,800 series — enough to ask which series actually
+carry open interest:
+
+```sql
+SELECT regexp_extract(event_ticker, '^([A-Z0-9]+)', 1) AS series,
+       count(*) AS markets, sum(open_interest_fp) AS open_interest
+FROM kalshi.markets('', status => 'open')
+GROUP BY 1 ORDER BY open_interest DESC LIMIT 20;
+```
+
+The other functions still take a ticker, and every scan streams a page at a
+time, so a `LIMIT` stops early rather than paying for the walk. A paged call that still has not
 reached the end after `MAX_PAGES` raises `KalshiPageLimitError` rather than
 returning a prefix that reads like a complete result.
 

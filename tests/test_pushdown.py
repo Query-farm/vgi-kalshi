@@ -367,3 +367,97 @@ class TestCursorStability:
         """Freezing must not mean ignoring — the first tick still pushes."""
         requests = self._run([_Filters({"event_ticker": "E"})])
         assert requests[0].get("event_ticker") == "E"
+
+
+class TestExchangeWideScan:
+    """`markets('')` scans every series, which only works with parlays excluded.
+
+    Kalshi lists ~400,000 multivariate parlay combinations as ordinary markets.
+    They sort first, so an exchange-wide scan that includes them returns
+    hundreds of thousands of zero-volume rows before reaching anything real —
+    which is why the series ticker used to be mandatory in spirit as well as in
+    signature.
+    """
+
+    @staticmethod
+    def _params(**args: object) -> Any:
+        return _Params(
+            args=MarketsArgs(**{"series_ticker": "", **args}),  # type: ignore[arg-type]
+            current_pushdown_filters=None,
+        )
+
+    def test_parlays_are_excluded_by_default(self) -> None:
+        assert MarketsArgs(series_ticker="").exclude_parlays is True
+
+    def test_an_empty_series_omits_the_parameter_entirely(self) -> None:
+        """Sending `series_ticker=` blank is not the same as not sending it."""
+        import httpx
+
+        import vgi_kalshi.kalshi_api as api
+        from vgi_kalshi.markets import MarketsFunction
+        from vgi_kalshi.schemas import MARKET_SCHEMA
+
+        seen: list[dict[str, str]] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            seen.append(dict(request.url.params))
+            return httpx.Response(200, json={"markets": [{"ticker": "T"}]})
+
+        class Out:
+            done = False
+
+            def emit(self, batch: Any, **kwargs: Any) -> None: ...
+            def finish(self) -> None:
+                self.done = True
+
+        class Params:
+            args = MarketsArgs(series_ticker="")
+            output_schema = MARKET_SCHEMA
+            secrets = None
+            attach_opaque_data = None
+            current_pushdown_filters = None
+
+        original = api.open_client
+        api.open_client = lambda: httpx.Client(transport=httpx.MockTransport(handler))
+        try:
+            MarketsFunction.process(Params(), MarketsFunction.initial_state(Params()), Out())
+        finally:
+            api.open_client = original
+        assert "series_ticker" not in seen[0], seen[0]
+        assert seen[0].get("mve_filter") == "exclude", seen[0]
+
+    def test_a_named_series_still_filters(self) -> None:
+        import httpx
+
+        import vgi_kalshi.kalshi_api as api
+        from vgi_kalshi.markets import MarketsFunction
+        from vgi_kalshi.schemas import MARKET_SCHEMA
+
+        seen: list[dict[str, str]] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            seen.append(dict(request.url.params))
+            return httpx.Response(200, json={"markets": []})
+
+        class Out:
+            done = False
+
+            def emit(self, batch: Any, **kwargs: Any) -> None: ...
+            def finish(self) -> None:
+                self.done = True
+
+        class Params:
+            args = MarketsArgs(series_ticker="KXBTCD", exclude_parlays=False)
+            output_schema = MARKET_SCHEMA
+            secrets = None
+            attach_opaque_data = None
+            current_pushdown_filters = None
+
+        original = api.open_client
+        api.open_client = lambda: httpx.Client(transport=httpx.MockTransport(handler))
+        try:
+            MarketsFunction.process(Params(), MarketsFunction.initial_state(Params()), Out())
+        finally:
+            api.open_client = original
+        assert seen[0]["series_ticker"] == "KXBTCD"
+        assert "mve_filter" not in seen[0], "opting out must not send the filter"

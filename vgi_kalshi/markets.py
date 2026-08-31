@@ -215,7 +215,11 @@ def _emit_fanout(
 class MarketsArgs:
     """``markets(series_ticker)`` — series is the per-row key; the rest narrow it."""
 
-    series_ticker: Annotated[str, Arg(0, doc="Series ticker input column, e.g. 'KXBTCD'")]
+    #: Empty means every series. That is only affordable because of
+    #: `exclude_parlays` below — see the class docstring.
+    series_ticker: Annotated[
+        str, Arg(0, doc="Series ticker, e.g. 'KXBTCD'. Empty string scans every series.")
+    ]
     # Empty string means "not supplied". A `str | None` annotation resolves to
     # the Arrow null type, which the DuckDB extension cannot cast a VARCHAR into
     # ("Unimplemented type for cast (VARCHAR -> NULL)"), so every optional arg
@@ -236,6 +240,16 @@ class MarketsArgs:
             choices=["", "unopened", "open", "closed", "settled"],
         ),
     ] = ""
+    #: Kalshi lists ~400,000 multivariate parlay combinations — every crossing of
+    #: one category with another — as ordinary markets. They are almost all
+    #: zero-volume, they sort first, and they are the reason an exchange-wide
+    #: scan used to be untenable. Excluded by default because a caller who wants
+    #: them can ask for that series by name; leaving them in by default would
+    #: make `markets('')` useless rather than merely large.
+    exclude_parlays: Annotated[
+        bool,
+        Arg("exclude_parlays", doc="Drop multivariate parlay combos (KXMVE*)", default=True),
+    ] = True
 
 
 MARKETS_DOCS = docs(
@@ -291,6 +305,13 @@ MARKETS_DOCS = docs(
             "SELECT ticker, status FROM kalshi.main.markets('KXBTCD', status => 'open') ORDER BY ticker",
         ),
         (
+            "Which series carry the most open interest, across the whole exchange",
+            "SELECT regexp_extract(event_ticker, '^([A-Z0-9]+)', 1) AS series, count(*) AS markets, "
+            "sum(open_interest_fp) AS open_interest "
+            "FROM kalshi.main.markets('', status => 'open') "
+            "GROUP BY 1 ORDER BY open_interest DESC LIMIT 20",
+        ),
+        (
             "The implied probability curve for a price ladder, in strike order",
             "SELECT floor_strike, (yes_bid_dollars + yes_ask_dollars) / 2 AS implied_probability "
             "FROM kalshi.main.markets('KXWTI', status => 'open') "
@@ -303,12 +324,20 @@ MARKETS_DOCS = docs(
 
 @init_single_worker
 class MarketsFunction(TableFunctionGenerator[MarketsArgs, PagedScanState]):
-    """Markets under a series, streamed one API page per tick.
+    """Markets under a series, or across the whole exchange, one API page per tick.
 
-    ``series_ticker`` is required rather than optional on purpose. An unfiltered
-    market scan pages past 400,000 rows — roughly 398,000 of them zero-volume
-    ``KXMVECROSSCATEGORY`` parlay combos — and takes minutes. Requiring the
-    series keeps a naive ``SELECT *`` honest.
+    ``series_ticker`` is positional and therefore always supplied, but an **empty
+    string means every series**. That used to be a bad idea: an unfiltered scan
+    pages past 400,000 rows, roughly 398,000 of them zero-volume
+    ``KXMVECROSSCATEGORY`` parlay combos, which sort first and swamp everything
+    real.
+
+    Two changes made it reasonable. The scan now streams a page at a time, so a
+    ``LIMIT`` stops early instead of paying for the walk; and ``exclude_parlays``
+    drops the combos at the API, which is what turns the exchange-wide scan from
+    hundreds of thousands of rows into about 99,000 open markets across ~3,800
+    series, measured at 11 seconds. That is the query that answers "where is the
+    open interest", which no per-series call can.
 
     This is a paging scan rather than a blended row transform because the
     endpoint behind it is cursor-paged. A blended function must emit everything
@@ -385,9 +414,12 @@ class MarketsFunction(TableFunctionGenerator[MarketsArgs, PagedScanState]):
             key="markets",
             fixed_schema=cls.FIXED_SCHEMA,
             query={
-                "series_ticker": params.args.series_ticker,
+                # Empty string means "every series"; `_get` drops None, so the
+                # parameter is simply omitted rather than sent blank.
+                "series_ticker": params.args.series_ticker or None,
                 "event_ticker": params.args.event_ticker or pushed_event,
                 "status": params.args.status or pushed_status,
+                "mve_filter": "exclude" if params.args.exclude_parlays else None,
             },
             stamp=stamp,
         )
