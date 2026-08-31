@@ -392,11 +392,11 @@ class HistoricalCandlesticksFunction(RowTransformFunction[HistoricalCandlestickA
             ),
             example_queries=examples(
                 (
-                    "Daily closing prices for the most recently settled market in a series",
+                    "Hourly closing prices for the most recently settled market in a series",
                     "SELECT c.end_period_ts, c.price_close_dollars FROM ("
                     "SELECT ticker FROM kalshi.main.historical_markets('KXBTCD') LIMIT 1) m, "
                     "LATERAL kalshi.main.historical_candlesticks(m.ticker, "
-                    "period_interval => 1440) c ORDER BY c.end_period_ts",
+                    "period_interval => 60) c ORDER BY c.end_period_ts",
                 ),
                 (
                     "Hourly high and low for a settled market",
@@ -412,9 +412,9 @@ class HistoricalCandlesticksFunction(RowTransformFunction[HistoricalCandlestickA
                     "SELECT c.end_period_ts, c.price_close_dollars FROM ("
                     "SELECT ticker FROM kalshi.main.historical_markets('KXBTCD') LIMIT 1) m, "
                     "LATERAL kalshi.main.historical_candlesticks(m.ticker, "
-                    "period_interval => 1440) c ORDER BY c.end_period_ts"
+                    "period_interval => 60) c ORDER BY c.end_period_ts"
                 ),
-                description="Daily closing prices for the most recently settled market in a series",
+                description="Hourly closing prices for the most recently settled market in a series",
             ),
         ]
 

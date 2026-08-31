@@ -691,7 +691,8 @@ class CandlesticksFunction(RowTransformFunction[CandlestickArgs]):
                     "Hourly closing prices for one market over the last day",
                     "SELECT c.end_period_ts, c.price_close_dollars FROM ("
                     "SELECT series_ticker, ticker FROM kalshi.main.markets('KXBTCD') "
-                    "WHERE status = 'active' LIMIT 1) m, "
+                    "WHERE status = 'active' AND volume_24h_fp > 100 "
+                    "AND open_time < now() - INTERVAL 3 HOUR LIMIT 1) m, "
                     "LATERAL kalshi.main.candlesticks(m.series_ticker, m.ticker, "
                     "period_interval => 60) c ORDER BY c.end_period_ts",
                 ),
@@ -709,7 +710,8 @@ class CandlesticksFunction(RowTransformFunction[CandlestickArgs]):
                 sql=(
                     "SELECT c.end_period_ts, c.price_close_dollars FROM ("
                     "SELECT series_ticker, ticker FROM kalshi.main.markets('KXBTCD') "
-                    "WHERE status = 'active' LIMIT 1) m, "
+                    "WHERE status = 'active' AND volume_24h_fp > 100 "
+                    "AND open_time < now() - INTERVAL 3 HOUR LIMIT 1) m, "
                     "LATERAL kalshi.main.candlesticks(m.series_ticker, m.ticker, "
                     "period_interval => 60) c ORDER BY c.end_period_ts"
                 ),
