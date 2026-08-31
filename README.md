@@ -516,7 +516,8 @@ Copyright © 2026 [Query Farm LLC](https://query.farm)
 Released under the **MIT License** — see [LICENSE](LICENSE).
 
 The market data this worker returns is Kalshi's, not covered by that license,
-and subject to [Kalshi's terms of use](https://kalshi.com/terms).
+and subject to [Kalshi's terms of use](https://kalshi.com/terms). See
+[NOTICE](NOTICE). This project is not affiliated with or endorsed by Kalshi.
 
 ---
 

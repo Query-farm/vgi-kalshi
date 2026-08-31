@@ -1,0 +1,18 @@
+vgi-kalshi
+Copyright (c) 2026 Query Farm LLC - https://query.farm
+
+This product is licensed under the MIT License. See LICENSE.
+
+------------------------------------------------------------------------------
+
+Kalshi market data
+
+This software reads Kalshi's public market-data API. The market data it
+returns is Kalshi Inc.'s, is not covered by the MIT License above, and is
+subject to Kalshi's terms of use:
+
+    https://kalshi.com/terms
+
+Neither this software nor Query Farm LLC is affiliated with, endorsed by, or
+sponsored by Kalshi Inc. "Kalshi" is a trademark of its respective owner and
+is used here only to describe what this software connects to.
