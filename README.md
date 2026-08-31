@@ -437,12 +437,12 @@ say nothing about the code.
 It earns the wait. The behavioural tier has caught, on separate runs, a scan
 that wedged the client uncancellably, a timestamp that crashed every consumer
 of a row, and a shipped example that could not bind — none of which any of the
-182 offline tests could see.
+198 offline tests could see.
 
 ## Tests
 
 ```bash
-pytest              # 185 offline tests
+pytest              # 198 offline tests
 pytest -m live      # 31 tests against the public API
 ```
 

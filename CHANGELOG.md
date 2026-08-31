@@ -41,6 +41,25 @@ corrupted or killed a query rather than degrading it:
   nanosecond-representable window are now NULL.
 - `GET` requests are retried on transient 5xx and dropped connections, not only
   on 429. A single reset connection used to abort a whole fan-out.
+- Every column conversion is total: one malformed value becomes NULL rather
+  than failing the batch it arrived in, including the nested `settlement_sources`
+  column, which had no per-value guard at all.
+- A cursor-paged scan freezes its query for the life of the walk. Pushdown
+  filters are refreshed between ticks, and resuming an opaque Kalshi cursor
+  under changed parameters is undefined — it would have returned plausible but
+  wrong rows rather than erroring.
+- A 200 carrying a CDN error page instead of JSON now raises with the path,
+  content type and body rather than a bare `JSONDecodeError`.
+
+### Operational
+
+- One process-wide connection pool, so a paged scan does not pay a TLS
+  handshake per page (138 ms → 50 ms).
+- Live tests skip, rather than fail, when Kalshi's shared rate limit is
+  exhausted after retries — that is an environment condition, not a defect.
+- CI runs lint, types and the offline suite on every push against PyPI-resolved
+  dependencies; the live tests and the example-executing lint tier run daily and
+  never concurrently, because they share a per-IP rate limit.
 
 ### Notes
 
