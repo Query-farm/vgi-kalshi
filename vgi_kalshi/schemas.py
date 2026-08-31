@@ -126,11 +126,33 @@ def to_timestamp(value: Any) -> datetime | None:
     return parsed
 
 
+def to_integer(value: Any) -> int | None:
+    """Parse an integer, or None when the value is not one.
+
+    Total for the same reason :func:`to_decimal` and :func:`to_timestamp` are:
+    a single odd value in a single row must not fail the batch it arrived in.
+    ``int("1.5")`` raises, and Kalshi's schema is not a contract we control.
+    """
+    if value is None or isinstance(value, bool) or value == "":
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def column(rows: Sequence[dict[str, Any]], key: str, field: pa.Field) -> pa.Array:
     """Extract ``key`` from every row and build the Arrow array ``field`` declares.
 
     The conversion is chosen from the field's declared type, so a schema edit is
     the only thing needed to change how a column is parsed.
+
+    Every branch is total. One malformed value from one market must never fail
+    the whole batch — every row beside it would be lost, and the caller would
+    see an exception rather than a mostly-good result with a NULL in it. This
+    has now been the cause of three separate production defects (an
+    unrepresentable decimal, Go's zero timestamp, a non-integer integer), so the
+    nested fallback is guarded too rather than waiting to become the fourth.
     """
     values = [row.get(key) for row in rows]
     if pa.types.is_decimal(field.type):
@@ -144,10 +166,28 @@ def column(rows: Sequence[dict[str, Any]], key: str, field: pa.Field) -> pa.Arra
     if pa.types.is_boolean(field.type):
         return pa.array([None if v is None else bool(v) for v in values], type=field.type)
     if pa.types.is_integer(field.type):
-        return pa.array([None if v is None else int(v) for v in values], type=field.type)
+        return pa.array([to_integer(v) for v in values], type=field.type)
     if pa.types.is_string(field.type):
         return pa.array([None if v is None else str(v) for v in values], type=field.type)
-    return pa.array(values, type=field.type)
+    # Lists and structs: Arrow validates the shape, and there is no per-value
+    # conversion to interpose. Build the whole column, and if the payload does
+    # not match the declared type, fall back to isolating the rows that do —
+    # a nested column is worth losing a value over, not a scan.
+    try:
+        return pa.array(values, type=field.type)
+    except (pa.ArrowInvalid, pa.ArrowTypeError, TypeError, ValueError):
+        return pa.array([_nullable_nested(v, field.type) for v in values], type=field.type)
+
+
+def _nullable_nested(value: Any, kind: pa.DataType) -> Any:
+    """``value`` if Arrow accepts it alone, else None."""
+    if value is None:
+        return None
+    try:
+        pa.array([value], type=kind)
+    except (pa.ArrowInvalid, pa.ArrowTypeError, TypeError, ValueError):
+        return None
+    return value
 
 
 def batch_from_rows(rows: Sequence[dict[str, Any]], schema: pa.Schema) -> pa.RecordBatch:

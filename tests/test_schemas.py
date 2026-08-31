@@ -251,3 +251,70 @@ class TestUnrepresentableTimestamps:
         column = batch_from_rows(rows, EVENT_SCHEMA).column("last_updated_ts")
         # Raises ArrowInvalid if any value is out of the ns window.
         assert column.cast(pa.timestamp("ns", tz="UTC")).to_pylist()[1] is not None
+
+
+class TestEveryConversionIsTotal:
+    """No single bad value may fail the batch it arrived in.
+
+    This has caused three separate defects — an unrepresentable decimal, Go's
+    zero timestamp, a non-integer integer — each found only when a real payload
+    hit it, and each fatal to a whole scan rather than to one cell. The property
+    is worth stating once for every branch rather than rediscovering per type:
+    a value we cannot represent becomes NULL, and its row and every row beside
+    it survives.
+    """
+
+    JUNK = ["not-a-number", "", None, True, {"nested": 1}, [1, 2], float("nan"), "1.5"]
+
+    @pytest.mark.parametrize("bad", JUNK)
+    def test_no_column_type_raises_on_junk(self, bad: object) -> None:
+        from vgi_kalshi.schemas import (
+            EVENT_SCHEMA,
+            HISTORICAL_MARKET_SCHEMA,
+            MARKET_SCHEMA,
+            SERIES_SCHEMA,
+            TRADE_SCHEMA,
+        )
+
+        for schema in (
+            MARKET_SCHEMA,
+            SERIES_SCHEMA,
+            EVENT_SCHEMA,
+            TRADE_SCHEMA,
+            HISTORICAL_MARKET_SCHEMA,
+        ):
+            row = dict.fromkeys(schema.names, bad)
+            batch = batch_from_rows([row], schema)  # must not raise
+            assert batch.num_rows == 1
+
+    def test_a_bad_value_does_not_take_its_neighbours(self) -> None:
+        from vgi_kalshi.schemas import SERIES_SCHEMA
+
+        rows = [
+            {"ticker": "GOOD", "fee_multiplier": 2},
+            {"ticker": "BAD", "fee_multiplier": "n/a"},
+            {"ticker": "ALSO_GOOD", "fee_multiplier": 3},
+        ]
+        batch = batch_from_rows(rows, SERIES_SCHEMA)
+        assert batch.column("ticker").to_pylist() == ["GOOD", "BAD", "ALSO_GOOD"]
+        assert batch.column("fee_multiplier").to_pylist() == [2, None, 3]
+
+    def test_a_malformed_nested_value_is_isolated(self) -> None:
+        """A list-of-struct column has no per-value hook, so it is guarded whole."""
+        from vgi_kalshi.schemas import EVENT_SCHEMA
+
+        rows = [
+            {"event_ticker": "GOOD", "settlement_sources": [{"name": "CF", "url": "u"}]},
+            {"event_ticker": "BAD", "settlement_sources": "not a list of structs"},
+        ]
+        batch = batch_from_rows(rows, EVENT_SCHEMA)
+        assert batch.column("event_ticker").to_pylist() == ["GOOD", "BAD"]
+        assert batch.column("settlement_sources").to_pylist()[0] == [{"name": "CF", "url": "u"}]
+        assert batch.column("settlement_sources").to_pylist()[1] is None
+
+    def test_integers_reject_booleans(self) -> None:
+        """`bool` is an `int`; True must not silently become 1."""
+        from vgi_kalshi.schemas import to_integer
+
+        assert to_integer(True) is None
+        assert to_integer(3) == 3
