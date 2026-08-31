@@ -190,6 +190,22 @@ Measured against the public API, unauthenticated:
 else — so a query that fans out over events needs `cache_ttl`, not more
 parallelism.
 
+**Order books and candlesticks are fetched in batches of 100.** Kalshi exposes
+`GET /markets/orderbooks` and `GET /markets/candlesticks`, which take up to 100
+market tickers each, so `orderbook()` and `candlesticks()` under a LATERAL cost
+one request per hundred markets rather than one per market — measured at 5.89s
+→ 0.13s for 100 books, a ~44× improvement, and far more importantly one request
+out of the ~29/second budget instead of a hundred. This happens automatically;
+no query changes.
+
+Two wire-format traps, both Kalshi's: `/markets/orderbooks` needs its `tickers`
+parameter **repeated**, and comma-joining them returns HTTP 200 with a single
+empty book for a market named `"A,B,C"` — a wrong answer rather than an error.
+`/markets/candlesticks` wants the opposite, a comma-separated `market_tickers`.
+It also caps the response at 10,000 candles across the whole call and truncates
+silently past that, so the batch is sized by the window: 100 markets of hourly
+candles over a day, but only 6 markets of one-minute candles.
+
 **Transport.** Responses are compressed: httpx advertises `br` (Brotli is a
 declared dependency for this reason) and Kalshi honours it. On the `series`
 catalog that is 1.35 MB on the wire against gzip's 2.06 MB and 15.6 MB raw — a

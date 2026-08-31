@@ -146,6 +146,51 @@ class TestOrderbook:
         assert flatten_orderbook("NOPE-XYZ", api.orderbook("NOPE-XYZ")) == []
 
 
+class TestBatchedFetches:
+    """The batched endpoints must agree with the per-market ones they replace.
+
+    That equivalence is the whole basis for using them: the same query returns
+    the same rows, for 1/100th of the request budget.
+    """
+
+    def test_batched_books_match_per_market_books(self) -> None:
+        markets = api.markets(SERIES, status="open", limit=6)
+        if not markets:
+            pytest.skip(f"no open markets in {SERIES} right now")
+        tickers = [m["ticker"] for m in markets]
+        with api.open_client() as client:
+            before = {t: api.orderbook(t, client=client) for t in tickers}
+            batched = api.orderbooks(tickers, client=client)
+            after = {t: api.orderbook(t, client=client) for t in tickers}
+        assert set(batched) == set(tickers)
+        # A live book can move between reads, so only a value that matches
+        # neither surrounding per-market read is a real disagreement.
+        mismatched = [t for t in tickers if batched[t] != before[t] and batched[t] != after[t]]
+        assert mismatched == [], f"batched books disagree with per-market books: {mismatched}"
+
+    def test_batched_candles_match_per_market_candles(self) -> None:
+        """Settled markets, so the candles are closed and cannot move underneath us."""
+        markets = api.markets(SERIES, status="settled", limit=3)
+        if not markets:
+            pytest.skip(f"no settled markets in {SERIES} right now")
+        tickers = [m["ticker"] for m in markets]
+        now = int(time.time())
+        window = {"period_interval": 60, "start_ts": now - 3 * 86_400, "end_ts": now}
+        with api.open_client() as client:
+            batched = api.batch_candlesticks(tickers, client=client, **window)
+            single = {t: api.candlesticks(SERIES, t, client=client, **window) for t in tickers}
+        assert batched == single
+
+    def test_the_hundred_ticker_cap_is_still_a_hard_400(self) -> None:
+        """If Kalshi raises it this can relax; if it lowers it, this catches it."""
+        markets = api.markets(SERIES, limit=api.BATCH_TICKER_LIMIT + 1)
+        if len(markets) <= api.BATCH_TICKER_LIMIT:
+            pytest.skip("not enough markets to exceed the cap")
+        tickers = [m["ticker"] for m in markets][: api.BATCH_TICKER_LIMIT + 1]
+        response = _probe("/markets/orderbooks", [("tickers", t) for t in tickers])
+        assert response.status_code == 400, "cap moved; update BATCH_TICKER_LIMIT"
+
+
 class TestCandlesticks:
     def test_series_scoped_path_works(self, open_market: dict) -> None:
         """Regression guard: the documented /markets/{ticker}/candlesticks path 404s."""

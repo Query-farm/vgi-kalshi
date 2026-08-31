@@ -60,6 +60,7 @@ from vgi_kalshi.schemas import (
     flatten_candlesticks,
     flatten_orderbook,
     series_of,
+    to_decimal,
 )
 
 if TYPE_CHECKING:
@@ -117,6 +118,25 @@ def _opt_in_cache_control(ttl: int, *, per_value: bool) -> CacheControl | None:
     if ttl <= 0:
         return None
     return CacheControl(ttl=ttl, stale_if_error=STALE_IF_ERROR, per_value=per_value)
+
+
+def _cap_depth(levels: list[dict[str, Any]], depth: int) -> list[dict[str, Any]]:
+    """Keep only the best ``depth`` levels per side.
+
+    ``/markets/orderbooks`` takes no depth parameter, unlike the per-market
+    endpoint it replaces, so the cap is applied here instead. "Best" is the top
+    of each side's book: highest price for the buyers resting on ``yes``, and
+    likewise for ``no`` — each side's list is quoted from its own perspective.
+    """
+    out: list[dict[str, Any]] = []
+    for side in ("yes", "no"):
+        ranked = sorted(
+            (level for level in levels if level["side"] == side),
+            key=lambda level: to_decimal(level["price_dollars"]) or 0,
+            reverse=True,
+        )
+        out.extend(ranked[:depth])
+    return out
 
 
 def _emit_fanout(
@@ -376,7 +396,9 @@ class OrderbookArgs:
     """``orderbook(ticker)`` with an optional named depth cap."""
 
     ticker: Annotated[str, Arg(0, doc="Market ticker input column")]
-    #: 0 means "no cap" — see the sentinel note on MarketsArgs.
+    #: 0 means "no cap" — see the sentinel note on MarketsArgs. Applied here
+    #: rather than by Kalshi: the batch endpoint this uses takes no depth
+    #: parameter, so the whole book arrives and the best levels are kept.
     depth: Annotated[int, Arg("depth", doc="Max price levels per side (0 = all)", default=0, ge=0)] = 0
     cache_ttl: Annotated[
         int,
@@ -464,13 +486,19 @@ class OrderbookFunction(RowTransformFunction[OrderbookArgs]):
         parents: list[int] = []
         credentials = auth.for_call(params.secrets, params.attach_opaque_data)
         with api.open_client() as client:
+            # One request per 100 markets rather than one per market. The whole
+            # input batch is fetched up front and then fanned back out in input
+            # order, so provenance is unchanged and a repeated ticker still
+            # produces its rows once per input row.
+            books = api.orderbooks(
+                [str(t) for t in tickers if t is not None], client=client, credentials=credentials
+            )
             for index, ticker in enumerate(tickers):
                 if ticker is None:
                     continue
-                book = api.orderbook(
-                    str(ticker), depth=params.args.depth or None, client=client, credentials=credentials
-                )
-                levels = flatten_orderbook(str(ticker), book)
+                levels = flatten_orderbook(str(ticker), books.get(str(ticker)) or {})
+                if depth := params.args.depth:
+                    levels = _cap_depth(levels, depth)
                 rows.extend(levels)
                 parents.extend([index] * len(levels))
         _emit_fanout(
@@ -486,9 +514,12 @@ class OrderbookFunction(RowTransformFunction[OrderbookArgs]):
 class CandlestickArgs:
     """``candlesticks(series_ticker, ticker)`` plus a named period and window.
 
-    Both tickers are positional because the endpoint genuinely needs both — the
-    path is ``/series/{series}/markets/{ticker}/candlesticks``. In a LATERAL the
-    driving row supplies each.
+    Both tickers are positional because the per-market endpoint genuinely needs
+    both — its path is ``/series/{series}/markets/{ticker}/candlesticks``. The
+    batched endpoint this actually calls keys on the market ticker alone, so the
+    series is not used to route the request; it stays in the signature because it
+    is what makes ``markets()`` output compose here, and because the per-market
+    path remains the documented one. In a LATERAL the driving row supplies each.
     """
 
     series_ticker: Annotated[str, Arg(0, doc="Series ticker input column")]
@@ -603,19 +634,20 @@ class CandlesticksFunction(RowTransformFunction[CandlestickArgs]):
         parents: list[int] = []
         credentials = auth.for_call(params.secrets, params.attach_opaque_data)
         with api.open_client() as client:
+            # Batched, and sized by the window: the endpoint caps total candles
+            # across the call, so a wide window means fewer markets per request.
+            found = api.batch_candlesticks(
+                [str(t) for s, t in zip(series, tickers, strict=True) if s is not None and t is not None],
+                period_interval=params.args.period_interval,
+                start_ts=start_ts,
+                end_ts=end_ts,
+                client=client,
+                credentials=credentials,
+            )
             for index, (series_ticker, ticker) in enumerate(zip(series, tickers, strict=True)):
                 if series_ticker is None or ticker is None:
                     continue
-                candles = api.candlesticks(
-                    str(series_ticker),
-                    str(ticker),
-                    period_interval=params.args.period_interval,
-                    start_ts=start_ts,
-                    end_ts=end_ts,
-                    client=client,
-                    credentials=credentials,
-                )
-                flat = flatten_candlesticks(str(ticker), candles)
+                flat = flatten_candlesticks(str(ticker), found.get(str(ticker)) or [])
                 rows.extend(flat)
                 parents.extend([index] * len(flat))
         _emit_fanout(

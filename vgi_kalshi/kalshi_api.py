@@ -17,6 +17,7 @@ from __future__ import annotations
 import os
 import re
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -39,6 +40,17 @@ PAGE_LIMIT = 1000
 
 #: ``/events`` caps its page size at 200; 201 is a 400.
 EVENTS_PAGE_LIMIT = 200
+
+#: Both batch endpoints take at most 100 market tickers and answer 400 above it.
+#: Batching is the single biggest lever this client has: 100 order books cost one
+#: request instead of 100, which measured ~44x faster end to end and, more to the
+#: point, spends 1 of the ~29 requests/second the rate limiter allows.
+BATCH_TICKER_LIMIT = 100
+
+#: ``/markets/candlesticks`` also caps the *candles* it will return across all
+#: markets in one call. Exceeding it truncates rather than erroring, so the
+#: caller has to size its own batches — see :func:`candlestick_batch_size`.
+BATCH_CANDLE_LIMIT = 10_000
 
 #: Hard stop on cursor following, so a runaway scan cannot hang a query forever.
 #: `markets` alone can page past 400k rows (~398k of which are zero-volume
@@ -170,7 +182,7 @@ class KalshiPageLimitError(RuntimeError):
 
 def _get(
     path: str,
-    params: dict[str, Any] | None = None,
+    params: dict[str, Any] | Sequence[tuple[str, Any]] | None = None,
     *,
     client: httpx.Client | None = None,
     hint: CacheHint | None = None,
@@ -204,7 +216,10 @@ def _get(
         KalshiError: The response status was not 2xx after retries.
         httpx.TransportError: Every attempt failed to reach the API.
     """
-    clean = {k: v for k, v in (params or {}).items() if v is not None}
+    # A sequence of pairs, not a mapping, when a parameter must repeat
+    # (``?tickers=A&tickers=B``) — see :func:`orderbooks`.
+    pairs = list(params.items()) if isinstance(params, dict) else list(params or ())
+    clean: Any = [(k, v) for k, v in pairs if v is not None]
     url = f"{base_url()}{path}"
     owned = client is None
     http = client or open_client()
@@ -371,6 +386,98 @@ def candlesticks(
         credentials=credentials,
     )
     return payload.get("candlesticks") or []
+
+
+def orderbooks(
+    tickers: Sequence[str],
+    *,
+    client: httpx.Client | None = None,
+    hint: CacheHint | None = None,
+    credentials: Credentials | None = None,
+) -> dict[str, dict[str, Any]]:
+    """Order books for many markets at once, keyed by ticker.
+
+    The batched twin of :func:`orderbook`, and the reason a ``LATERAL`` over a
+    whole series is affordable: 100 books cost one request rather than 100.
+    Tickers are chunked at :data:`BATCH_TICKER_LIMIT`; duplicates are collapsed,
+    since the result is a mapping and the caller fans it back out.
+
+    Note the parameter style. ``tickers`` must be repeated
+    (``?tickers=A&tickers=B``) — comma-joining them is accepted with HTTP 200 and
+    answers with a single empty book for a ticker named ``"A,B"``, which is a
+    wrong answer rather than an error, so it is worth not getting wrong.
+    """
+    unique = list(dict.fromkeys(t for t in tickers if t))
+    books: dict[str, dict[str, Any]] = {}
+    for start in range(0, len(unique), BATCH_TICKER_LIMIT):
+        chunk = unique[start : start + BATCH_TICKER_LIMIT]
+        payload = _get(
+            "/markets/orderbooks",
+            [("tickers", ticker) for ticker in chunk],
+            client=client,
+            hint=hint,
+            credentials=credentials,
+        )
+        for entry in payload.get("orderbooks") or []:
+            ticker = entry.get("ticker")
+            if ticker:
+                books[ticker] = entry.get("orderbook_fp") or {}
+    return books
+
+
+def candlestick_batch_size(*, period_interval: int, start_ts: int, end_ts: int) -> int:
+    """How many markets fit in one batched candlestick call.
+
+    ``/markets/candlesticks`` caps its response at :data:`BATCH_CANDLE_LIMIT`
+    candles across *all* markets in the call, and silently returns fewer rather
+    than erroring — so a 100-market batch of one-minute candles over a day would
+    ask for 144,000 and quietly get a fraction. Sizing the batch by the window is
+    what keeps the result complete.
+    """
+    period_seconds = max(period_interval, 1) * 60
+    per_market = max(1, (max(end_ts - start_ts, 0) // period_seconds) + 1)
+    return max(1, min(BATCH_TICKER_LIMIT, BATCH_CANDLE_LIMIT // per_market))
+
+
+def batch_candlesticks(
+    tickers: Sequence[str],
+    *,
+    period_interval: int,
+    start_ts: int,
+    end_ts: int,
+    client: httpx.Client | None = None,
+    hint: CacheHint | None = None,
+    credentials: Credentials | None = None,
+) -> dict[str, list[dict[str, Any]]]:
+    """Candlesticks for many markets at once, keyed by market ticker.
+
+    Unlike :func:`candlesticks`, this endpoint is not scoped to a series — it
+    keys on the market ticker alone — and unlike :func:`orderbooks` it wants its
+    tickers **comma-separated** in a single ``market_tickers`` parameter. The two
+    batch endpoints disagree about this; both spellings are Kalshi's.
+    """
+    unique = list(dict.fromkeys(t for t in tickers if t))
+    size = candlestick_batch_size(period_interval=period_interval, start_ts=start_ts, end_ts=end_ts)
+    out: dict[str, list[dict[str, Any]]] = {}
+    for start in range(0, len(unique), size):
+        chunk = unique[start : start + size]
+        payload = _get(
+            "/markets/candlesticks",
+            {
+                "market_tickers": ",".join(chunk),
+                "period_interval": period_interval,
+                "start_ts": start_ts,
+                "end_ts": end_ts,
+            },
+            client=client,
+            hint=hint,
+            credentials=credentials,
+        )
+        for entry in payload.get("markets") or []:
+            ticker = entry.get("market_ticker")
+            if ticker:
+                out[ticker] = entry.get("candlesticks") or []
+    return out
 
 
 def trades(
