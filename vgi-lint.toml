@@ -1,0 +1,20 @@
+# vgi-lint configuration for the Kalshi worker.
+#
+#   vgi-lint lint --audit-waivers
+#
+# runs the rules the waiver below silences and fails if it has stopped buying
+# anything — a waiver that suppresses nothing is a standing claim nobody revisits.
+
+location = "uv run kalshi_worker.py"
+select = ["ALL"]
+fail_on = "error"
+
+ignore = [
+  { code = "VGI311", kind = "tooling-bug", reason = """\
+`all_series` IS exposed as a table — `kalshi.main.series` is a real catalog table \
+backed by it (Table(name="series", function=AllSeriesFunction)). The rule looks for \
+a table whose name matches the function's, so it cannot see the link. The names \
+differ deliberately: a function and a table cannot share one name in a schema, so \
+the scan is `all_series` and the table consumers actually use is `series`.\
+""" },
+]

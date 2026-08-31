@@ -1,0 +1,41 @@
+[project]
+name = "vgi-kalshi"
+dynamic = ["version"]
+description = "A read-only VGI (Vector Gateway Interface) worker exposing Kalshi prediction-market data to DuckDB/SQL"
+readme = "README.md"
+license = "MIT"
+authors = [{ name = "Query Farm", email = "hello@query.farm" }]
+keywords = ["vgi", "duckdb", "arrow", "kalshi", "prediction-markets", "sql"]
+requires-python = ">=3.13"
+dependencies = [
+    "vgi-python[http]>=0.31.0",
+    "httpx>=0.27",
+]
+
+[project.optional-dependencies]
+serve = ["vgi-python[http,oauth]>=0.31.0", "vgi-rpc[sentry]>=0.44.1"]
+
+[project.scripts]
+vgi-kalshi = "vgi_kalshi.worker:main"
+vgi-kalshi-http = "vgi_kalshi.worker:main_http"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "vgi_kalshi/__init__.py"
+
+[tool.uv.sources]
+vgi-python = { path = "../vgi-python" }
+vgi-rpc = { path = "../vgi-rpc" }
+
+[tool.ruff]
+line-length = 110
+target-version = "py313"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Live tests hit the public Kalshi API; opt in with `pytest -m live`.
+addopts = "-m 'not live'"
+markers = ["live: hits the real Kalshi API over the network"]
