@@ -285,6 +285,31 @@ fan-out is already running as fast as Kalshi will allow**, so issuing the
 requests concurrently would only reach the 429s sooner. `cache_ttl` is the only
 real lever.
 
+**Pushdown.** Every function honours projection pushdown — it builds only the
+columns the query asked for, rather than all 27 market columns for a
+`SELECT ticker`. Eight also translate predicates into Kalshi query parameters,
+so a `WHERE` narrows what is *fetched* rather than only what is returned:
+
+| Predicate | becomes | worth |
+|---|---|---|
+| `series WHERE category = 'Crypto'` | `/series?category=` | 16.4 MB → 0.2 MB (**71×**) |
+| `markets WHERE status = 'active'` | `status => 'open'` | one page instead of a series |
+| `markets/historical_markets WHERE event_ticker = …` | the endpoint's filter | one event instead of a series |
+| `events WHERE status = …` | the endpoint's filter | fewer pages |
+| `trades WHERE created_time > …` | `min_ts`/`max_ts` | a window instead of a whole tape |
+| `candlesticks WHERE end_period_ts > …` | narrows the window | fewer candles |
+
+The remaining six functions are point lookups — one market, one book, one event
+— with nothing to filter.
+
+No function declares `filters_exactly_applied`, so DuckDB re-checks every
+predicate against whatever comes back. That asymmetry is the whole design:
+declining to push a filter costs bandwidth, while pushing a *wrong* one drops
+rows nothing downstream can recover. So a predicate is translated only where the
+API parameter means exactly what the SQL means, or strictly more — which is why
+`status` on `markets` is mapped through a verified table and why a strict `<` on
+a timestamp is widened by a second rather than translated exactly.
+
 `_get` retries five times with exponential backoff (~0.5s → 8s) on a 429, on a
 transient 5xx, and on a dropped connection — a `GET` is idempotent, and
 retrying only the rate limiter would let one reset connection abort a fan-out
@@ -375,7 +400,7 @@ snapshot of a moving boundary has no honest answer to.
 ## Tests
 
 ```bash
-pytest              # 170 offline tests
+pytest              # 182 offline tests
 pytest -m live      # 31 tests against the public API
 ```
 

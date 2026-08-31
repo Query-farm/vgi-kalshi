@@ -127,3 +127,116 @@ class TestProjection:
     def test_filters_are_rechecked_by_duckdb(self) -> None:
         """We translate only some predicates, so we must not claim exactness."""
         assert MarketsFunction.get_metadata().filters_exactly_applied is False
+
+
+class _Bounds:
+    def __init__(self, low: Any = None, high: Any = None) -> None:
+        self.min_value = pa.scalar(low) if low is not None else None
+        self.max_value = pa.scalar(high) if high is not None else None
+
+
+class _RangeFilters:
+    """The slice of PushdownFilters the range helpers use."""
+
+    def __init__(self, column: str, low: Any = None, high: Any = None) -> None:
+        self._column, self._bounds = column, _Bounds(low, high)
+
+    def get_column_constant(self, column_name: str) -> None:
+        return None
+
+    def get_column_bounds(self, column_name: str) -> _Bounds | None:
+        return self._bounds if column_name == self._column else None
+
+
+class TestEpochBounds:
+    """A time predicate becomes the endpoint's own window, or nothing at all."""
+
+    @staticmethod
+    def _params(filters: Any) -> Any:
+        return _Params(args=MarketsArgs(series_ticker="K"), current_pushdown_filters=filters)
+
+    def test_datetime_bounds_become_epoch_seconds(self) -> None:
+        from datetime import UTC, datetime
+
+        from vgi_kalshi.pushdown import epoch_bounds
+
+        low = datetime(2026, 8, 1, tzinfo=UTC)
+        high = datetime(2026, 8, 2, tzinfo=UTC)
+        got = epoch_bounds(self._params(_RangeFilters("created_time", low, high)), "created_time")  # type: ignore[arg-type]
+        assert got == (int(low.timestamp()), int(high.timestamp()) + 1)
+
+    def test_the_upper_bound_is_widened_by_a_second(self) -> None:
+        """Kalshi's window is inclusive; narrowing would drop a row on the boundary.
+
+        Fetching one extra second is free — DuckDB re-checks the predicate — while
+        excluding a trade that landed exactly on the bound would be a wrong answer.
+        """
+        from datetime import UTC, datetime
+
+        from vgi_kalshi.pushdown import epoch_bounds
+
+        high = datetime(2026, 8, 2, tzinfo=UTC)
+        _, got_high = epoch_bounds(self._params(_RangeFilters("created_time", None, high)), "created_time")  # type: ignore[arg-type]
+        assert got_high == int(high.timestamp()) + 1
+
+    def test_no_filters_pushes_nothing(self) -> None:
+        from vgi_kalshi.pushdown import epoch_bounds
+
+        assert epoch_bounds(self._params(None), "created_time") == (None, None)  # type: ignore[arg-type]
+
+    def test_a_different_column_pushes_nothing(self) -> None:
+        from vgi_kalshi.pushdown import epoch_bounds
+
+        filters = _RangeFilters("something_else", 1, 2)
+        assert epoch_bounds(self._params(filters), "created_time") == (None, None)  # type: ignore[arg-type]
+
+    def test_booleans_are_not_epochs(self) -> None:
+        """`bool` is an `int`; True must not become 1970 plus a second."""
+        from vgi_kalshi.pushdown import epoch_bounds
+
+        got = epoch_bounds(self._params(_RangeFilters("created_time", True, True)), "created_time")  # type: ignore[arg-type]
+        assert got == (None, None)
+
+
+class TestPushdownCoverage:
+    """Which functions push, and which deliberately do not.
+
+    Written down because the answer is not obvious from the code: a function
+    without `filter_pushdown` is either a point lookup with nothing to filter,
+    or a gap. Naming both keeps the second kind visible.
+    """
+
+    #: Functions whose endpoint takes no filter worth pushing — every one of
+    #: these is a single-object lookup or a one-row snapshot.
+    NO_FILTERABLE_ENDPOINT = {
+        "market",
+        "orderbook",
+        "event",
+        "event_metadata",
+        "all_exchange_status",
+        "all_historical_cutoff",
+    }
+
+    def test_every_filterable_endpoint_pushes(self) -> None:
+        from vgi_kalshi.worker import _KALSHI_CATALOG
+
+        missing = [
+            f.Meta.name
+            for f in _KALSHI_CATALOG.schemas[0].functions
+            if f.Meta.name not in self.NO_FILTERABLE_ENDPOINT and not f.get_metadata().filter_pushdown
+        ]
+        assert missing == [], f"these have a filterable endpoint but push nothing: {missing}"
+
+    def test_projection_is_universal(self) -> None:
+        """Nothing here has a reason to build columns nobody asked for."""
+        from vgi_kalshi.worker import _KALSHI_CATALOG
+
+        for f in _KALSHI_CATALOG.schemas[0].functions:
+            assert f.get_metadata().projection_pushdown is True, f.Meta.name
+
+    def test_nothing_claims_exact_application(self) -> None:
+        """We translate some predicates, never all, so DuckDB must re-check."""
+        from vgi_kalshi.worker import _KALSHI_CATALOG
+
+        for f in _KALSHI_CATALOG.schemas[0].functions:
+            assert f.get_metadata().filters_exactly_applied is False, f.Meta.name

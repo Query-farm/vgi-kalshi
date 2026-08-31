@@ -30,6 +30,16 @@ COUNT = pa.decimal128(18, 2)
 #: Kalshi timestamps are RFC 3339 with a trailing ``Z``.
 TIMESTAMP = pa.timestamp("us", tz="UTC")
 
+#: The window a nanosecond-resolution consumer can hold. Arrow stores these
+#: columns at microsecond resolution, which spans most of recorded time, but
+#: pandas, numpy ``datetime64[ns]`` and anything casting to ``timestamp[ns]``
+#: are limited to 1677-2262 — and a value outside it does not degrade, it
+#: raises ``OverflowError: date value out of range`` when the client
+#: materializes the result. Emitting one is therefore a query the caller cannot
+#: read, which is worse than emitting NULL.
+_NS_FLOOR = datetime(1678, 1, 1, tzinfo=UTC)
+_NS_CEILING = datetime(2262, 1, 1, tzinfo=UTC)
+
 
 def to_decimal(value: Any) -> Decimal | None:
     """Parse a Kalshi fixed-point string into a Decimal, or None if absent/unparseable.
@@ -79,12 +89,17 @@ def to_timestamp(value: Any) -> datetime | None:
     """Parse an RFC 3339 string, or an epoch-seconds number, into an aware UTC datetime.
 
     Total by construction, like :func:`to_decimal`: anything unrepresentable
-    becomes NULL rather than raising. Python's ``datetime`` only spans years
-    1 to 9999, and Kalshi does emit values outside that — a far-future sentinel
-    reached this code as an epoch integer and took down an entire scan with
-    ``OverflowError: date value out of range``. Which of ``ValueError`` or
-    ``OverflowError`` you get is platform-dependent, and ``fromtimestamp`` can
-    raise ``OSError`` for extreme inputs, so all three are caught.
+    becomes NULL rather than raising, and "representable" is judged by what a
+    *consumer* can hold, not by what Python can parse.
+
+    Two distinct failures live here, both found by running real payloads rather
+    than by any offline test. Parsing can raise — ``ValueError`` or
+    ``OverflowError`` depending on platform, and ``OSError`` from
+    ``fromtimestamp`` on extreme input — so all three are caught. And a value
+    that parses fine can still be unusable: Kalshi sends Go's zero time
+    (``0001-01-01T00:00:00Z``) to mean "unset", which Arrow stores happily at
+    microsecond resolution and which then raises ``OverflowError`` in any
+    nanosecond-resolution client that materializes it. See :data:`_NS_FLOOR`.
     """
     if value is None or value == "":
         return None
@@ -92,14 +107,23 @@ def to_timestamp(value: Any) -> datetime | None:
         return None
     if isinstance(value, (int, float)):
         try:
-            return datetime.fromtimestamp(float(value), tz=UTC)
+            parsed = datetime.fromtimestamp(float(value), tz=UTC)
         except (ValueError, OverflowError, OSError):
             return None
-    try:
-        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-    except (ValueError, OverflowError):
+    else:
+        try:
+            parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        except (ValueError, OverflowError):
+            return None
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=UTC)
+    # Kalshi sends Go's zero time, 0001-01-01T00:00:00Z, to mean "unset" — most
+    # visibly as `last_updated_ts` on an event that has never been amended. That
+    # is not a date, and carrying it through hands the caller a row they cannot
+    # materialize. NULL is what it means and what every client can hold.
+    if not _NS_FLOOR <= parsed <= _NS_CEILING:
         return None
-    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
+    return parsed
 
 
 def column(rows: Sequence[dict[str, Any]], key: str, field: pa.Field) -> pa.Array:

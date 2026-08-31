@@ -34,6 +34,7 @@ from vgi_kalshi import auth
 from vgi_kalshi import kalshi_api as api
 from vgi_kalshi.kalshi_api import STALE_IF_ERROR, CacheHint
 from vgi_kalshi.meta import docs, examples
+from vgi_kalshi.pushdown import equality
 from vgi_kalshi.schemas import (
     EXCHANGE_STATUS_SCHEMA,
     SERIES_SCHEMA,
@@ -54,6 +55,10 @@ class AllSeriesFunction(TableFunctionGenerator[None, None]):
         categories = ["reference"]
         required_secrets = [SecretLookupEntry(secret_type=auth.SECRET_TYPE)]
         projection_pushdown = True
+        #: `/series?category=` is the difference between 16.4 MB and 0.2 MB on
+        #: `WHERE category = 'Crypto'` — a 71x saving on the catalog's own
+        #: headline query. Not exact: DuckDB still re-checks the predicate.
+        filter_pushdown = True
         tags = docs(
             category="reference",
             result_schema=SERIES_SCHEMA,
@@ -104,10 +109,16 @@ class AllSeriesFunction(TableFunctionGenerator[None, None]):
         ``/series`` is one of the few Kalshi endpoints that declares
         ``Cache-Control`` (``public, max-age=15``); that value is passed through
         rather than hardcoded, so the result cache follows the exchange.
+
+        A pushed ``category`` predicate becomes the endpoint's own filter, which
+        matters more here than anywhere else: the whole catalog is 16.4 MB and
+        one category is around 0.2 MB.
         """
         hint = CacheHint()
         rows: list[dict[str, Any]] = api.series_list(
-            hint=hint, credentials=auth.for_call(params.secrets, params.attach_opaque_data)
+            equality(params, "category"),
+            hint=hint,
+            credentials=auth.for_call(params.secrets, params.attach_opaque_data),
         )
         cache_control = (
             CacheControl(ttl=hint.max_age, stale_if_error=STALE_IF_ERROR) if hint.cacheable else None

@@ -56,6 +56,7 @@ from vgi_kalshi import kalshi_api as api
 from vgi_kalshi.kalshi_api import STALE_IF_ERROR, CacheHint
 from vgi_kalshi.meta import docs, examples
 from vgi_kalshi.paging import PagedScanState, emit_page
+from vgi_kalshi.pushdown import epoch_bounds, equality
 from vgi_kalshi.schemas import (
     CANDLESTICK_SCHEMA,
     EVENT_METADATA_SCHEMA,
@@ -159,18 +160,9 @@ def _pushed_market_filters(params: ProcessParams[MarketsArgs]) -> tuple[str | No
     An explicit named argument always wins over an inferred one — the caller
     said what they wanted, and the predicate will narrow the result anyway.
     """
-    filters = params.current_pushdown_filters
-    if filters is None:
-        return None, None
-
-    def constant(column: str) -> str | None:
-        scalar = filters.get_column_constant(column)
-        value = scalar.as_py() if scalar is not None else None
-        return str(value) if isinstance(value, str) and value else None
-
-    event = None if params.args.event_ticker else constant("event_ticker")
+    event = None if params.args.event_ticker else equality(params, "event_ticker")
     status = None
-    if not params.args.status and (reported := constant("status")):
+    if not params.args.status and (reported := equality(params, "status")):
         # `event_ticker` needs no translation; `status` does, and only for pairs
         # proven equivalent.
         status = _STATUS_COLUMN_TO_FILTER.get(reported)
@@ -424,7 +416,7 @@ class MarketFunction(RowTransformFunction[TickerArgs]):
                 (
                     "Current quote for one market by ticker",
                     "SELECT ticker, status, yes_bid_dollars, yes_ask_dollars "
-                    "FROM kalshi.main.market((SELECT ticker FROM kalshi.main.markets('KXBTCD') WHERE status = 'active' ORDER BY volume_24h_fp DESC LIMIT 1))",
+                    "FROM kalshi.main.market((SELECT ticker FROM kalshi.main.markets('KXBTCD') WHERE status = 'active' LIMIT 1))",
                 ),
             ),
         )
@@ -432,7 +424,7 @@ class MarketFunction(RowTransformFunction[TickerArgs]):
             FunctionExample(
                 sql=(
                     "SELECT ticker, status, yes_bid_dollars, yes_ask_dollars "
-                    "FROM kalshi.main.market((SELECT ticker FROM kalshi.main.markets('KXBTCD') WHERE status = 'active' ORDER BY volume_24h_fp DESC LIMIT 1))"
+                    "FROM kalshi.main.market((SELECT ticker FROM kalshi.main.markets('KXBTCD') WHERE status = 'active' LIMIT 1))"
                 ),
                 description="Current quote for one market by ticker",
             ),
@@ -530,7 +522,7 @@ class OrderbookFunction(RowTransformFunction[OrderbookArgs]):
                 (
                     "Full depth on both sides of one market's book",
                     "SELECT side, price_dollars, count_fp "
-                    "FROM kalshi.main.orderbook((SELECT ticker FROM kalshi.main.markets('KXBTCD') WHERE status = 'active' ORDER BY volume_24h_fp DESC LIMIT 1)) "
+                    "FROM kalshi.main.orderbook((SELECT ticker FROM kalshi.main.markets('KXBTCD') WHERE status = 'active' LIMIT 1)) "
                     "ORDER BY side, price_dollars DESC",
                 ),
                 (
@@ -644,6 +636,7 @@ class CandlesticksFunction(RowTransformFunction[CandlestickArgs]):
         categories = ["market-data", "blended"]
         required_secrets = [SecretLookupEntry(secret_type=auth.SECRET_TYPE)]
         projection_pushdown = True
+        filter_pushdown = True
         tags = docs(
             category="history",
             result_schema=CANDLESTICK_SCHEMA,
@@ -677,7 +670,7 @@ class CandlesticksFunction(RowTransformFunction[CandlestickArgs]):
                     "Hourly closing prices for one market over the last day",
                     "SELECT c.end_period_ts, c.price_close_dollars FROM ("
                     "SELECT series_ticker, ticker FROM kalshi.main.markets('KXBTCD') "
-                    "WHERE status = 'active' ORDER BY volume_24h_fp DESC LIMIT 1) m, "
+                    "WHERE status = 'active' LIMIT 1) m, "
                     "LATERAL kalshi.main.candlesticks(m.series_ticker, m.ticker, "
                     "period_interval => 60) c ORDER BY c.end_period_ts",
                 ),
@@ -695,7 +688,7 @@ class CandlesticksFunction(RowTransformFunction[CandlestickArgs]):
                 sql=(
                     "SELECT c.end_period_ts, c.price_close_dollars FROM ("
                     "SELECT series_ticker, ticker FROM kalshi.main.markets('KXBTCD') "
-                    "WHERE status = 'active' ORDER BY volume_24h_fp DESC LIMIT 1) m, "
+                    "WHERE status = 'active' LIMIT 1) m, "
                     "LATERAL kalshi.main.candlesticks(m.series_ticker, m.ticker, "
                     "period_interval => 60) c ORDER BY c.end_period_ts"
                 ),
@@ -718,6 +711,15 @@ class CandlesticksFunction(RowTransformFunction[CandlestickArgs]):
         now = int(time.time())
         end_ts = params.args.end_ts or now
         start_ts = params.args.start_ts or (end_ts - _DAY_SECONDS)
+        # A WHERE on end_period_ts can only ever *narrow* the window: rows
+        # outside it are excluded by the predicate regardless, so fetching them
+        # is pure waste. Intersecting rather than replacing keeps an explicit
+        # argument authoritative as an outer bound.
+        pushed_min, pushed_max = epoch_bounds(params, "end_period_ts")
+        if pushed_min is not None:
+            start_ts = max(start_ts, pushed_min)
+        if pushed_max is not None:
+            end_ts = min(end_ts, pushed_max)
         series = batch.column("series_ticker").to_pylist()
         tickers = batch.column("ticker").to_pylist()
         rows: list[dict[str, Any]] = []
@@ -786,6 +788,7 @@ class TradesFunction(RowTransformFunction[TradesArgs]):
         categories = ["market-data", "blended"]
         required_secrets = [SecretLookupEntry(secret_type=auth.SECRET_TYPE)]
         projection_pushdown = True
+        filter_pushdown = True
         tags = docs(
             category="history",
             result_schema=TRADE_SCHEMA,
@@ -816,7 +819,7 @@ class TradesFunction(RowTransformFunction[TradesArgs]):
                     "The most recent trades on the busiest open market in a series",
                     "SELECT t.created_time, t.taker_side, t.yes_price_dollars, t.count_fp FROM ("
                     "SELECT ticker FROM kalshi.main.markets('KXBTCD') WHERE status = 'active' "
-                    "ORDER BY volume_24h_fp DESC LIMIT 1) m, "
+                    "LIMIT 1) m, "
                     "LATERAL kalshi.main.trades(m.ticker, max_rows => 100) t "
                     "ORDER BY t.created_time DESC",
                 ),
@@ -824,7 +827,7 @@ class TradesFunction(RowTransformFunction[TradesArgs]):
                     "Volume-weighted average price from the tape",
                     "SELECT sum(t.yes_price_dollars * t.count_fp) / sum(t.count_fp) AS vwap_dollars "
                     "FROM (SELECT ticker FROM kalshi.main.markets('KXBTCD') "
-                    "WHERE status = 'active' ORDER BY volume_24h_fp DESC LIMIT 1) m, "
+                    "WHERE status = 'active' LIMIT 1) m, "
                     "LATERAL kalshi.main.trades(m.ticker, max_rows => 500) t",
                 ),
             ),
@@ -834,7 +837,7 @@ class TradesFunction(RowTransformFunction[TradesArgs]):
                 sql=(
                     "SELECT t.created_time, t.taker_side, t.yes_price_dollars, t.count_fp FROM ("
                     "SELECT ticker FROM kalshi.main.markets('KXBTCD') WHERE status = 'active' "
-                    "ORDER BY volume_24h_fp DESC LIMIT 1) m, "
+                    "LIMIT 1) m, "
                     "LATERAL kalshi.main.trades(m.ticker, max_rows => 100) t "
                     "ORDER BY t.created_time DESC"
                 ),
@@ -859,14 +862,17 @@ class TradesFunction(RowTransformFunction[TradesArgs]):
         parents: list[int] = []
         hint = CacheHint()
         credentials = auth.for_call(params.secrets, params.attach_opaque_data)
+        # A `WHERE created_time >= ...` becomes the endpoint's own window rather
+        # than a filter applied to a whole tape we already paid to fetch.
+        pushed_min, pushed_max = epoch_bounds(params, "created_time")
         with api.open_client() as client:
             for index, ticker in enumerate(tickers):
                 if ticker is None:
                     continue
                 found = api.trades(
                     str(ticker),
-                    min_ts=params.args.min_ts or None,
-                    max_ts=params.args.max_ts or None,
+                    min_ts=params.args.min_ts or pushed_min,
+                    max_ts=params.args.max_ts or pushed_max,
                     limit=params.args.max_rows or None,
                     client=client,
                     hint=hint,
@@ -960,6 +966,7 @@ class EventsFunction(TableFunctionGenerator[EventsArgs, PagedScanState]):
         categories = ["market-data"]
         required_secrets = [SecretLookupEntry(secret_type=auth.SECRET_TYPE)]
         projection_pushdown = True
+        filter_pushdown = True
         tags = EVENTS_DOCS
         examples = [
             FunctionExample(
@@ -995,7 +1002,9 @@ class EventsFunction(TableFunctionGenerator[EventsArgs, PagedScanState]):
             key="events",
             query={
                 "series_ticker": params.args.series_ticker,
-                "status": params.args.status or None,
+                # `/events` filters on the same word its `status` column
+                # reports, so unlike markets() this needs no translation.
+                "status": params.args.status or equality(params, "status"),
             },
             page_limit=api.EVENTS_PAGE_LIMIT,
             opt_in_ttl=params.args.cache_ttl,

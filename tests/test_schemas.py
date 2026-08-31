@@ -221,3 +221,33 @@ class TestUnrepresentableTimestamps:
     @pytest.mark.parametrize("raw", ["2026-08-31T03:11:48.484035Z", 1788141600])
     def test_representable_values_still_parse(self, raw: object) -> None:
         assert to_timestamp(raw) is not None
+
+    def test_gos_zero_time_is_null_not_year_one(self) -> None:
+        """Kalshi's "unset" sentinel is Go's zero time, and it is not a date.
+
+        Found only by running a real payload: an event that has never been
+        amended reports `last_updated_ts = '0001-01-01T00:00:00Z'`. Arrow stores
+        that happily at microsecond resolution, so nothing here failed — and
+        then every nanosecond-resolution consumer (pandas, numpy
+        `datetime64[ns]`, any cast to `timestamp[ns]`) raised `OverflowError:
+        date value out of range` on materializing the row. Emitting a value the
+        caller cannot read is worse than emitting NULL.
+        """
+        assert to_timestamp("0001-01-01T00:00:00Z") is None
+
+    @pytest.mark.parametrize("raw", ["1500-01-01T00:00:00Z", "2300-01-01T00:00:00Z"])
+    def test_values_outside_nanosecond_range_are_null(self, raw: str) -> None:
+        assert to_timestamp(raw) is None
+
+    def test_the_result_always_casts_to_nanoseconds(self) -> None:
+        """The property that matters: whatever we emit, a client can hold."""
+        import pyarrow as pa
+
+        rows = [
+            {"event_ticker": "A", "last_updated_ts": "0001-01-01T00:00:00Z"},
+            {"event_ticker": "B", "last_updated_ts": "2026-09-04T21:00:00Z"},
+            {"event_ticker": "C", "last_updated_ts": 253402300800},
+        ]
+        column = batch_from_rows(rows, EVENT_SCHEMA).column("last_updated_ts")
+        # Raises ArrowInvalid if any value is out of the ns window.
+        assert column.cast(pa.timestamp("ns", tz="UTC")).to_pylist()[1] is not None

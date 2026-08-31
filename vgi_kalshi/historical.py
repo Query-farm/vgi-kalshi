@@ -36,6 +36,7 @@ from vgi_kalshi import kalshi_api as api
 from vgi_kalshi.kalshi_api import STALE_IF_ERROR, CacheHint
 from vgi_kalshi.meta import docs, examples
 from vgi_kalshi.paging import PagedScanState, emit_archive_page
+from vgi_kalshi.pushdown import epoch_bounds, equality
 from vgi_kalshi.schemas import (
     CANDLESTICK_SCHEMA,
     HISTORICAL_CUTOFF_SCHEMA,
@@ -100,6 +101,7 @@ class HistoricalMarketsFunction(TableFunctionGenerator[HistoricalMarketsArgs, Pa
         categories = ["historical"]
         required_secrets = [SecretLookupEntry(secret_type=auth.SECRET_TYPE)]
         projection_pushdown = True
+        filter_pushdown = True
         tags = docs(
             category="historical",
             result_schema=HISTORICAL_MARKET_SCHEMA,
@@ -180,7 +182,7 @@ class HistoricalMarketsFunction(TableFunctionGenerator[HistoricalMarketsArgs, Pa
             key="markets",
             query={
                 "series_ticker": params.args.series_ticker,
-                "event_ticker": params.args.event_ticker or None,
+                "event_ticker": params.args.event_ticker or equality(params, "event_ticker"),
             },
             ttl=_ARCHIVE_TTL,
             stamp=stamp,
@@ -214,6 +216,7 @@ class HistoricalTradesFunction(RowTransformFunction[HistoricalTradesArgs]):
         categories = ["historical", "blended"]
         required_secrets = [SecretLookupEntry(secret_type=auth.SECRET_TYPE)]
         projection_pushdown = True
+        filter_pushdown = True
         tags = docs(
             category="historical",
             result_schema=TRADE_SCHEMA,
@@ -278,14 +281,17 @@ class HistoricalTradesFunction(RowTransformFunction[HistoricalTradesArgs]):
         rows: list[dict[str, Any]] = []
         parents: list[int] = []
         credentials = auth.for_call(params.secrets, params.attach_opaque_data)
+        # An archived tape is a whole market lifetime; a WHERE on created_time
+        # becomes the endpoint's window instead of a post-filter.
+        pushed_min, pushed_max = epoch_bounds(params, "created_time")
         with api.open_client() as client:
             for index, ticker in enumerate(tickers):
                 if ticker is None:
                     continue
                 found = api.historical_trades(
                     str(ticker),
-                    min_ts=params.args.min_ts or None,
-                    max_ts=params.args.max_ts or None,
+                    min_ts=params.args.min_ts or pushed_min,
+                    max_ts=params.args.max_ts or pushed_max,
                     limit=params.args.max_rows or None,
                     client=client,
                     credentials=credentials,
@@ -334,6 +340,7 @@ class HistoricalCandlesticksFunction(RowTransformFunction[HistoricalCandlestickA
         categories = ["historical", "blended"]
         required_secrets = [SecretLookupEntry(secret_type=auth.SECRET_TYPE)]
         projection_pushdown = True
+        filter_pushdown = True
         tags = docs(
             category="historical",
             result_schema=CANDLESTICK_SCHEMA,
@@ -405,6 +412,12 @@ class HistoricalCandlesticksFunction(RowTransformFunction[HistoricalCandlestickA
         with api.open_client() as client:
             end_ts = params.args.end_ts or _cutoff_epoch(client, credentials)
             start_ts = params.args.start_ts or (end_ts - 30 * 86_400)
+            # Narrow only; see the live twin for why intersecting is safe.
+            pushed_min, pushed_max = epoch_bounds(params, "end_period_ts")
+            if pushed_min is not None:
+                start_ts = max(start_ts, pushed_min)
+            if pushed_max is not None:
+                end_ts = min(end_ts, pushed_max)
             for index, ticker in enumerate(tickers):
                 if ticker is None:
                     continue
