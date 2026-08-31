@@ -19,6 +19,7 @@ import os
 import re
 import threading
 import time
+from urllib.parse import quote
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
@@ -205,6 +206,23 @@ def reset_shared_client() -> None:
 
 
 atexit.register(reset_shared_client)
+
+
+def segment(value: str) -> str:
+    """Percent-encode one path segment, so a value cannot escape its position.
+
+    Tickers reach this module straight from user SQL. Interpolated raw, a ticker
+    of ``../../portfolio/balance`` resolves to ``/trade-api/portfolio/balance``
+    — out of the market-data prefix entirely and into the credentialed account
+    surface, which this worker exists not to touch. A ``?`` would likewise
+    truncate the path and inject query parameters.
+
+    The read-only guard in the test suite cannot catch that: it looks for
+    forbidden paths as source literals, and this constructs one at runtime out
+    of a value the source never contains. Encoding here is the structural fix —
+    ``/`` and ``?`` become ``%2F`` and ``%3F``, so a segment stays a segment.
+    """
+    return quote(value, safe="")
 
 
 class KalshiError(RuntimeError):
@@ -431,7 +449,7 @@ def market(
     credentials: Credentials | None = None,
 ) -> dict[str, Any]:
     """A single market by ticker."""
-    return _get(f"/markets/{ticker}", client=client, hint=hint, credentials=credentials)["market"]
+    return _get(f"/markets/{segment(ticker)}", client=client, hint=hint, credentials=credentials)["market"]
 
 
 def orderbook(
@@ -450,7 +468,11 @@ def orderbook(
     so an empty book here does not mean the market exists.
     """
     payload = _get(
-        f"/markets/{ticker}/orderbook", {"depth": depth}, client=client, hint=hint, credentials=credentials
+        f"/markets/{segment(ticker)}/orderbook",
+        {"depth": depth},
+        client=client,
+        hint=hint,
+        credentials=credentials,
     )
     return payload.get("orderbook_fp") or {}
 
@@ -475,7 +497,7 @@ def candlesticks(
     ticker as well as the market ticker.
     """
     payload = _get(
-        f"/series/{series_ticker}/markets/{ticker}/candlesticks",
+        f"/series/{segment(series_ticker)}/markets/{segment(ticker)}/candlesticks",
         {"period_interval": period_interval, "start_ts": start_ts, "end_ts": end_ts},
         client=client,
         hint=hint,
@@ -647,7 +669,7 @@ def event(
     returned here, since ``markets(series, event_ticker => …)`` is the way to
     ask for those and it paginates properly.
     """
-    payload = _get(f"/events/{event_ticker}", client=client, hint=hint, credentials=credentials)
+    payload = _get(f"/events/{segment(event_ticker)}", client=client, hint=hint, credentials=credentials)
     return payload.get("event") or {}
 
 
@@ -664,7 +686,9 @@ def event_metadata(
     the summary Kalshi inlines into the listing; this endpoint is where the
     images live.
     """
-    return _get(f"/events/{event_ticker}/metadata", client=client, hint=hint, credentials=credentials)
+    return _get(
+        f"/events/{segment(event_ticker)}/metadata", client=client, hint=hint, credentials=credentials
+    )
 
 
 def exchange_status(
@@ -780,7 +804,7 @@ def historical_candlesticks(
     series. There is no batched form of this one.
     """
     payload = _get(
-        f"/historical/markets/{ticker}/candlesticks",
+        f"/historical/markets/{segment(ticker)}/candlesticks",
         {"period_interval": period_interval, "start_ts": start_ts, "end_ts": end_ts},
         client=client,
         hint=hint,

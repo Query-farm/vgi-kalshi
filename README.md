@@ -10,7 +10,10 @@ tables and table functions.
 > request signing, and this worker exposes none of them. Read-only is enforced
 > structurally (one `_get` chokepoint in `kalshi_api.py`, the only module in the
 > package that so much as imports `httpx`) and by a CI guard
-> (`tests/test_readonly_guard.py`).
+> (`tests/test_readonly_guard.py`). Tickers reaching a URL path are
+> percent-encoded, so a value from user SQL cannot traverse out of the
+> market-data prefix — the source-literal guard cannot see a path assembled at
+> runtime, and that gap was real.
 
 ## Run
 
@@ -442,7 +445,7 @@ of a row, and a shipped example that could not bind — none of which any of the
 ## Tests
 
 ```bash
-pytest              # 198 offline tests
+pytest              # 212 offline tests
 pytest -m live      # 31 tests against the public API
 ```
 

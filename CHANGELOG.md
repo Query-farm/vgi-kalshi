@@ -51,6 +51,16 @@ corrupted or killed a query rather than degrading it:
 - A 200 carrying a CDN error page instead of JSON now raises with the path,
   content type and body rather than a bare `JSONDecodeError`.
 
+### Security
+
+- Path segments built from caller-supplied tickers are percent-encoded. A ticker
+  of `../../portfolio/balance` previously resolved to `/trade-api/portfolio/
+  balance` — outside the market-data prefix and into Kalshi's credentialed
+  account surface, which this worker exists not to touch, and which the
+  read-only guard could not catch because it inspects source literals rather
+  than paths built at runtime. With authentication configured the request would
+  have been signed as well.
+
 ### Operational
 
 - One process-wide connection pool, so a paged scan does not pay a TLS
