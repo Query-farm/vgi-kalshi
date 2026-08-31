@@ -153,9 +153,9 @@ class ExchangeStatusFunction(TableFunctionGenerator[None, None]):
             ),
             example_queries=examples(
                 (
-                    "Venues that are up but not currently trading, read from the scan function",
-                    "SELECT description FROM kalshi.main.all_exchange_status() "
-                    "WHERE exchange_active AND NOT trading_active",
+                    "Every venue and whether it is currently trading",
+                    "SELECT description, exchange_active, trading_active "
+                    "FROM kalshi.main.all_exchange_status() ORDER BY exchange_index",
                 ),
                 (
                     "Every venue's status, newest venue ids last",
@@ -167,10 +167,10 @@ class ExchangeStatusFunction(TableFunctionGenerator[None, None]):
         examples = [
             FunctionExample(
                 sql=(
-                    "SELECT description FROM kalshi.main.all_exchange_status() "
-                    "WHERE exchange_active AND NOT trading_active"
+                    "SELECT description, exchange_active, trading_active "
+                    "FROM kalshi.main.all_exchange_status() ORDER BY exchange_index"
                 ),
-                description="Venues that are up but not currently trading, read from the scan function",
+                description="Every venue and whether it is currently trading",
             ),
         ]
 

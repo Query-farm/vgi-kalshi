@@ -42,7 +42,12 @@ from vgi.arguments import Arg, SecretLookupEntry
 from vgi.cache_control import CacheControl
 from vgi.invocation import BindResponse
 from vgi.metadata import FunctionExample
-from vgi.table_function import BindParams, ProcessParams
+from vgi.table_function import (
+    BindParams,
+    ProcessParams,
+    TableFunctionGenerator,
+    init_single_worker,
+)
 from vgi.table_in_out_function import RowTransformFunction
 from vgi_rpc.rpc import OutputCollector
 
@@ -50,6 +55,7 @@ from vgi_kalshi import auth
 from vgi_kalshi import kalshi_api as api
 from vgi_kalshi.kalshi_api import STALE_IF_ERROR, CacheHint
 from vgi_kalshi.meta import docs, examples
+from vgi_kalshi.paging import PagedScanState, emit_page
 from vgi_kalshi.schemas import (
     CANDLESTICK_SCHEMA,
     EVENT_METADATA_SCHEMA,
@@ -239,13 +245,72 @@ class MarketsArgs:
     ] = ""
 
 
-class MarketsFunction(RowTransformFunction[MarketsArgs]):
-    """Markets under a series.
+MARKETS_DOCS = docs(
+    category="markets",
+    result_schema=MARKET_SCHEMA,
+    llm=(
+        "The entry point to Kalshi's market data: one row per tradeable contract under a "
+        "series, with its current quotes, volume and lifecycle state. Reach for this when you "
+        "know the series (from the `series` table) and want the individual strikes. The series "
+        "ticker is required, so start from `series` if you do not have one. Every deeper "
+        "function keys off the `ticker` this returns, and the `series_ticker` it stamps on is "
+        "what lets its output drive `candlesticks()` directly."
+    ),
+    md=(
+        "Markets are the tradeable contracts under one Kalshi series — a series like `KXBTCD` "
+        "(Bitcoin daily) opens a new event each day, and each event carries many markets, one "
+        "per strike price.\n\n"
+        "### Why the series ticker is required\n\n"
+        "An unfiltered market scan pages past 400,000 rows, roughly 398,000 of which are "
+        "zero-volume `KXMVECROSSCATEGORY` parlay combinations, and takes minutes. Requiring the "
+        "series keeps a naive unfiltered scan honest.\n\n"
+        "### The two status vocabularies\n\n"
+        "The `status` **argument** filters on `unopened`, `open`, `closed` or `settled`. The "
+        "`status` **column** reports `initialized`, `active`, `closed`, `determined`, `settled` "
+        "or `finalized`. They are not interchangeable: `status => 'open'` returns rows whose "
+        "column reads `active`, and passing `active` as the filter is an error from Kalshi.\n\n"
+        "### Streaming\n\n"
+        "Rows arrive one API page at a time, so a `LIMIT` stops early instead of paying for the "
+        "whole series. The cost of that is this cannot be used as the inner side of a "
+        "correlated `LATERAL` — drive a join from it, not into it.\n\n"
+        "### Prices\n\n"
+        "All `*_dollars` columns are dollars per contract between 0 and 1, carried as "
+        "`DECIMAL(18,4)` — Kalshi sends them as exact fixed-point strings and rounding them "
+        "through a float would lose that."
+    ),
+    example_queries=examples(
+        (
+            "Open Bitcoin daily markets with their best bid, busiest first",
+            "SELECT ticker, title, yes_bid_dollars, volume_24h_fp "
+            "FROM kalshi.main.markets('KXBTCD') WHERE status = 'active' "
+            "ORDER BY volume_24h_fp DESC",
+        ),
+        (
+            "Ask Kalshi for only the open markets instead of filtering after the fact",
+            "SELECT ticker, status FROM kalshi.main.markets('KXBTCD', status => 'open') ORDER BY ticker",
+        ),
+    ),
+)
+
+
+@init_single_worker
+class MarketsFunction(TableFunctionGenerator[MarketsArgs, PagedScanState]):
+    """Markets under a series, streamed one API page per tick.
 
     ``series_ticker`` is required rather than optional on purpose. An unfiltered
     market scan pages past 400,000 rows — roughly 398,000 of them zero-volume
     ``KXMVECROSSCATEGORY`` parlay combos — and takes minutes. Requiring the
     series keeps a naive ``SELECT *`` honest.
+
+    This is a paging scan rather than a blended row transform because the
+    endpoint behind it is cursor-paged. A blended function must emit everything
+    for its input in a single ``process()`` call, so it would have to walk every
+    page before DuckDB saw one row; a ``LIMIT 10`` would still pay for the whole
+    series, and — since a scan blocked inside its first batch cannot be
+    cancelled — would wedge the client rather than merely be slow. Functions
+    whose fetch is naturally bounded (a single market, one order book, a
+    candlestick window) stay blended, and so stay usable under a correlated
+    LATERAL.
     """
 
     FIXED_SCHEMA: ClassVar[pa.Schema] = MARKET_SCHEMA
@@ -253,56 +318,13 @@ class MarketsFunction(RowTransformFunction[MarketsArgs]):
     class Meta:
         name = "markets"
         description = "Markets under a Kalshi series (series_ticker required)"
-        categories = ["market-data", "blended"]
+        categories = ["market-data"]
         required_secrets = [SecretLookupEntry(secret_type=auth.SECRET_TYPE)]
         projection_pushdown = True
         #: `filters_exactly_applied` stays False on purpose: only some predicates
         #: become Kalshi query parameters, so DuckDB must re-check them all.
         filter_pushdown = True
-        tags = docs(
-            category="markets",
-            result_schema=MARKET_SCHEMA,
-            llm=(
-                "The entry point to Kalshi's market data: one row per tradeable contract under a "
-                "series, with its current quotes, volume and lifecycle state. Reach for this when "
-                "you know the series (from the `series` table) and want the individual strikes. "
-                "The series ticker is required, so start from `series` if you do not have one. "
-                "Every deeper function keys off the `ticker` this returns, and the `series_ticker` "
-                "it stamps on is what lets its output drive `candlesticks()` directly."
-            ),
-            md=(
-                "Markets are the tradeable contracts under one Kalshi series — a series like "
-                "`KXBTCD` (Bitcoin daily) opens a new event each day, and each event carries many "
-                "markets, one per strike price.\n\n"
-                "### Why the series ticker is required\n\n"
-                "An unfiltered market scan pages past 400,000 rows, roughly 398,000 of which are "
-                "zero-volume `KXMVECROSSCATEGORY` parlay combinations, and takes minutes. "
-                "Requiring the series keeps a naive unfiltered scan honest.\n\n"
-                "### The two status vocabularies\n\n"
-                "The `status` **argument** filters on `unopened`, `open`, `closed` or `settled`. "
-                "The `status` **column** reports `initialized`, `active`, `closed`, `determined`, "
-                "`settled` or `finalized`. They are not interchangeable: `status => 'open'` "
-                "returns rows whose column reads `active`, and passing `active` as the filter is "
-                "an error from Kalshi.\n\n"
-                "### Prices\n\n"
-                "All `*_dollars` columns are dollars per contract between 0 and 1, carried as "
-                "`DECIMAL(18,4)` — Kalshi sends them as exact fixed-point strings and rounding "
-                "them through a float would lose that.\n\n"
-            ),
-            example_queries=examples(
-                (
-                    "Open Bitcoin daily markets with their best bid, busiest first",
-                    "SELECT ticker, title, yes_bid_dollars, volume_24h_fp "
-                    "FROM kalshi.main.markets('KXBTCD') WHERE status = 'active' "
-                    "ORDER BY volume_24h_fp DESC",
-                ),
-                (
-                    "Ask Kalshi for only the open markets instead of filtering after the fact",
-                    "SELECT ticker, status FROM kalshi.main.markets('KXBTCD', status => 'open') "
-                    "ORDER BY ticker",
-                ),
-            ),
-        )
+        tags = MARKETS_DOCS
         examples = [
             FunctionExample(
                 sql=(
@@ -319,40 +341,40 @@ class MarketsFunction(RowTransformFunction[MarketsArgs]):
         return BindResponse(output_schema=cls.FIXED_SCHEMA)
 
     @classmethod
+    def initial_state(cls, params: ProcessParams[MarketsArgs]) -> PagedScanState:
+        return PagedScanState()
+
+    @classmethod
     def process(
         cls,
         params: ProcessParams[MarketsArgs],
-        state: None,
-        batch: pa.RecordBatch,
+        state: PagedScanState,
         out: OutputCollector,
     ) -> None:
-        series = batch.column("series_ticker").to_pylist()
-        rows: list[dict[str, Any]] = []
-        parents: list[int] = []
-        hint = CacheHint()
-        credentials = auth.for_call(params.secrets, params.attach_opaque_data)
+        """Emit one page of markets, then remember where to resume."""
         pushed_event, pushed_status = _pushed_market_filters(params)
-        with api.open_client() as client:
-            for index, ticker in enumerate(series):
-                if ticker is None:
-                    continue
-                found = api.markets(
-                    str(ticker),
-                    event_ticker=params.args.event_ticker or pushed_event,
-                    status=params.args.status or pushed_status,
-                    client=client,
-                    hint=hint,
-                    credentials=credentials,
-                )
-                # Kalshi's market payload has no series_ticker, but this call
-                # knows it authoritatively: it is the input row. Stamping it on
-                # is what lets `markets()` drive `candlesticks()`, which needs a
-                # series ticker it would otherwise have no way to obtain.
-                for row in found:
-                    row["series_ticker"] = str(ticker)
-                rows.extend(found)
-                parents.extend([index] * len(found))
-        _emit_fanout(out, params.output_schema, rows, parents, _origin_cache_control(hint))
+
+        def stamp(rows: Sequence[dict[str, Any]]) -> None:
+            # Kalshi's market payload has no series_ticker, but this call knows
+            # it: it is the argument. Stamping it on is what lets `markets()`
+            # drive `candlesticks()`, which needs a series ticker it could not
+            # otherwise obtain.
+            for row in rows:
+                row["series_ticker"] = params.args.series_ticker
+
+        emit_page(
+            params,
+            state,
+            out,
+            path="/markets",
+            key="markets",
+            query={
+                "series_ticker": params.args.series_ticker,
+                "event_ticker": params.args.event_ticker or pushed_event,
+                "status": params.args.status or pushed_status,
+            },
+            stamp=stamp,
+        )
 
 
 @dataclass(slots=True, frozen=True, kw_only=True)
@@ -851,24 +873,66 @@ class TradesFunction(RowTransformFunction[TradesArgs]):
         )
 
 
+EVENTS_DOCS = docs(
+    category="reference",
+    result_schema=EVENT_SCHEMA,
+    llm=(
+        "The layer between a series and its markets: one row per resolution date, with the "
+        "strike date, settlement sources and whether its markets are mutually exclusive. Reach "
+        "for this to find a specific `event_ticker` — which `markets()` accepts as a filter — "
+        "without scanning every market in the series."
+    ),
+    md=(
+        "A Kalshi series recurs; each occurrence is an event; each event carries many markets, "
+        "one per strike. `KXBTCD` (Bitcoin daily) opens one event per day, and each event holds "
+        "a market for every strike price.\n\n"
+        "### Narrowing from here\n\n"
+        "Take an `event_ticker` from this and pass it to `markets()` as its `event_ticker` "
+        "argument to get just that day's strikes rather than the whole series. Note that has to "
+        "be a literal or a scalar subquery: `event_ticker` is a named argument, and DuckDB does "
+        "not allow a correlated column to be passed as one.\n\n"
+        "### Settlement sources\n\n"
+        "`settlement_sources` stays a nested list of `{name, url}` structs — flattening it "
+        "would fan every event out into one row per source. Apply DuckDB's `unnest` to the "
+        "column when you do want one row per source; the example queries show it. For the "
+        "images as well, use `event_metadata()`.\n\n"
+        "### Paging\n\n"
+        "`/events` caps its page size at 200 rather than the usual 1000 and rejects anything "
+        "larger outright. Rows stream a page at a time, so a `LIMIT` stops early."
+    ),
+    example_queries=examples(
+        (
+            "Bitcoin daily events by strike date",
+            "SELECT event_ticker, title, strike_date FROM kalshi.main.events('KXBTCD') ORDER BY strike_date",
+        ),
+        (
+            "Settlement sources for each event, one row per source",
+            "SELECT event_ticker, unnest(settlement_sources).name AS source "
+            "FROM kalshi.main.events('KXBTCD') ORDER BY event_ticker, source",
+        ),
+    ),
+)
+
+
 @dataclass(slots=True, frozen=True, kw_only=True)
 class EventsArgs:
     """``events(series_ticker)`` with an optional named status filter."""
 
-    series_ticker: Annotated[str, Arg(0, doc="Series ticker input column, e.g. 'KXBTCD'")]
+    series_ticker: Annotated[str, Arg(0, doc="Series ticker, e.g. 'KXBTCD'")]
     status: Annotated[str, Arg("status", doc="Event status filter", default="")] = ""
-    cache_ttl: Annotated[
-        int,
-        Arg("cache_ttl", doc="Seconds to cache this result (0 = off)", default=0, ge=0),
-    ] = 0
 
 
-class EventsFunction(RowTransformFunction[EventsArgs]):
+@init_single_worker
+class EventsFunction(TableFunctionGenerator[EventsArgs, PagedScanState]):
     """Events under a series — the layer between a series and its markets.
 
     One event is one resolution date with many strikes under it, so this is how
     you get from ``series`` to a specific ``event_ticker`` without scanning
     every market in the series.
+
+    Paged as a scan for the same reason as :class:`MarketsFunction`, with one
+    extra wrinkle: ``/events`` caps its page size at 200 and rejects anything
+    larger outright rather than clamping, so the page size is not the default.
     """
 
     FIXED_SCHEMA: ClassVar[pa.Schema] = EVENT_SCHEMA
@@ -876,61 +940,17 @@ class EventsFunction(RowTransformFunction[EventsArgs]):
     class Meta:
         name = "events"
         description = "Events under a Kalshi series (series_ticker required)"
-        categories = ["market-data", "blended"]
+        categories = ["market-data"]
         required_secrets = [SecretLookupEntry(secret_type=auth.SECRET_TYPE)]
         projection_pushdown = True
-        tags = docs(
-            category="reference",
-            result_schema=EVENT_SCHEMA,
-            llm=(
-                "The layer between a series and its markets: one row per resolution date, with "
-                "the strike date, settlement sources and whether its markets are mutually "
-                "exclusive. Reach for this to find a specific `event_ticker` — which `markets()` "
-                "accepts as a filter — without scanning every market in the series."
-            ),
-            md=(
-                "A Kalshi series recurs; each occurrence is an event; each event carries many "
-                "markets, one per strike. `KXBTCD` (Bitcoin daily) opens one event per day, and "
-                "each event holds a market for every strike price.\n\n"
-                "### Narrowing from here\n\n"
-                "Take an `event_ticker` from this and pass it to "
-                "`markets(series, event_ticker => …)` to get just that day's strikes rather than "
-                "the whole series.\n\n"
-                "### Settlement sources\n\n"
-                "`settlement_sources` stays a nested list of `{name, url}` structs — flattening "
-                "it would fan every event out into one row per source. Apply DuckDB's `unnest` "
-                "to the column when you do want one row per source; the example queries show "
-                "it.\n\n"
-                "### Paging\n\n"
-                "`/events` caps its page size at 200 rather than the usual 1000 and rejects "
-                "anything larger outright, which this worker handles for you.\n\n"
-            ),
-            example_queries=examples(
-                (
-                    "Bitcoin daily events by strike date",
-                    "SELECT event_ticker, title, strike_date FROM kalshi.main.events('KXBTCD') "
-                    "ORDER BY strike_date",
-                ),
-                (
-                    "Settlement sources for each event, one row per source",
-                    "SELECT event_ticker, unnest(settlement_sources).name AS source "
-                    "FROM kalshi.main.events('KXBTCD') ORDER BY event_ticker, source",
-                ),
-                (
-                    "Markets for one specific event, found through events()",
-                    "SELECT m.ticker, m.title FROM kalshi.main.events('KXBTCD') e, "
-                    "LATERAL kalshi.main.markets('KXBTCD', event_ticker => e.event_ticker) m "
-                    "ORDER BY m.ticker",
-                ),
-            ),
-        )
+        tags = EVENTS_DOCS
         examples = [
             FunctionExample(
                 sql=(
                     "SELECT event_ticker, title, strike_date "
                     "FROM kalshi.main.events('KXBTCD') ORDER BY strike_date"
                 ),
-                description="Upcoming Bitcoin daily events by strike date",
+                description="Bitcoin daily events by strike date",
             ),
         ]
 
@@ -939,37 +959,28 @@ class EventsFunction(RowTransformFunction[EventsArgs]):
         return BindResponse(output_schema=cls.FIXED_SCHEMA)
 
     @classmethod
+    def initial_state(cls, params: ProcessParams[EventsArgs]) -> PagedScanState:
+        return PagedScanState()
+
+    @classmethod
     def process(
         cls,
         params: ProcessParams[EventsArgs],
-        state: None,
-        batch: pa.RecordBatch,
+        state: PagedScanState,
         out: OutputCollector,
     ) -> None:
-        series = batch.column("series_ticker").to_pylist()
-        rows: list[dict[str, Any]] = []
-        parents: list[int] = []
-        hint = CacheHint()
-        credentials = auth.for_call(params.secrets, params.attach_opaque_data)
-        with api.open_client() as client:
-            for index, ticker in enumerate(series):
-                if ticker is None:
-                    continue
-                found = api.events(
-                    str(ticker),
-                    status=params.args.status or None,
-                    client=client,
-                    hint=hint,
-                    credentials=credentials,
-                )
-                rows.extend(found)
-                parents.extend([index] * len(found))
-        _emit_fanout(
+        """Emit one page of events, then remember where to resume."""
+        emit_page(
+            params,
+            state,
             out,
-            params.output_schema,
-            rows,
-            parents,
-            _origin_cache_control(hint) or _opt_in_cache_control(params.args.cache_ttl, per_value=True),
+            path="/events",
+            key="events",
+            query={
+                "series_ticker": params.args.series_ticker,
+                "status": params.args.status or None,
+            },
+            page_limit=api.EVENTS_PAGE_LIMIT,
         )
 
 

@@ -35,6 +35,7 @@ from vgi_kalshi import auth
 from vgi_kalshi import kalshi_api as api
 from vgi_kalshi.kalshi_api import STALE_IF_ERROR, CacheHint
 from vgi_kalshi.meta import docs, examples
+from vgi_kalshi.paging import PagedScanState, emit_archive_page
 from vgi_kalshi.schemas import (
     CANDLESTICK_SCHEMA,
     HISTORICAL_CUTOFF_SCHEMA,
@@ -81,15 +82,22 @@ class HistoricalMarketsArgs:
     event_ticker: Annotated[str, Arg("event_ticker", doc="Narrow to one event", default="")] = ""
 
 
-class HistoricalMarketsFunction(RowTransformFunction[HistoricalMarketsArgs]):
-    """Settled markets that have left the live endpoints."""
+@init_single_worker
+class HistoricalMarketsFunction(TableFunctionGenerator[HistoricalMarketsArgs, PagedScanState]):
+    """Settled markets that have left the live endpoints.
+
+    A paging scan rather than a blended row transform: the endpoint is
+    cursor-paged, and the archive of a long-running series is larger than the
+    live view of it, so walking every page before emitting would be worse here
+    than anywhere else. See :mod:`vgi_kalshi.paging`.
+    """
 
     FIXED_SCHEMA: ClassVar[pa.Schema] = HISTORICAL_MARKET_SCHEMA
 
     class Meta:
         name = "historical_markets"
         description = "Archived (settled) Kalshi markets, with their settlement value"
-        categories = ["historical", "blended"]
+        categories = ["historical"]
         required_secrets = [SecretLookupEntry(secret_type=auth.SECRET_TYPE)]
         projection_pushdown = True
         tags = docs(
@@ -147,33 +155,36 @@ class HistoricalMarketsFunction(RowTransformFunction[HistoricalMarketsArgs]):
         return BindResponse(output_schema=cls.FIXED_SCHEMA)
 
     @classmethod
+    def initial_state(cls, params: ProcessParams[HistoricalMarketsArgs]) -> PagedScanState:
+        return PagedScanState()
+
+    @classmethod
     def process(
         cls,
         params: ProcessParams[HistoricalMarketsArgs],
-        state: None,
-        batch: pa.RecordBatch,
+        state: PagedScanState,
         out: OutputCollector,
     ) -> None:
-        series = batch.column("series_ticker").to_pylist()
-        rows: list[dict[str, Any]] = []
-        parents: list[int] = []
-        credentials = auth.for_call(params.secrets, params.attach_opaque_data)
-        with api.open_client() as client:
-            for index, ticker in enumerate(series):
-                if ticker is None:
-                    continue
-                found = api.historical_markets(
-                    series_ticker=str(ticker),
-                    event_ticker=params.args.event_ticker or None,
-                    client=client,
-                    credentials=credentials,
-                )
-                # Same stamping as the live markets(), for the same reason.
-                for row in found:
-                    row["series_ticker"] = str(ticker)
-                rows.extend(found)
-                parents.extend([index] * len(found))
-        _emit(out, params.output_schema, rows, parents)
+        """Emit one page of archived markets, then remember where to resume."""
+
+        def stamp(rows: Sequence[dict[str, Any]]) -> None:
+            # Same stamping as the live markets(), for the same reason.
+            for row in rows:
+                row["series_ticker"] = params.args.series_ticker
+
+        emit_archive_page(
+            params,
+            state,
+            out,
+            path="/historical/markets",
+            key="markets",
+            query={
+                "series_ticker": params.args.series_ticker,
+                "event_ticker": params.args.event_ticker or None,
+            },
+            ttl=_ARCHIVE_TTL,
+            stamp=stamp,
+        )
 
 
 @dataclass(slots=True, frozen=True, kw_only=True)
@@ -349,10 +360,11 @@ class HistoricalCandlesticksFunction(RowTransformFunction[HistoricalCandlestickA
             ),
             example_queries=examples(
                 (
-                    "Daily closing prices for a settled market's final week",
-                    "SELECT end_period_ts, price_close_dollars "
-                    "FROM kalshi.main.historical_candlesticks('KXBTCD-26JUL0119-T68299.99', "
-                    "period_interval => 1440) ORDER BY end_period_ts",
+                    "Daily closing prices for the most recently settled market in a series",
+                    "SELECT c.end_period_ts, c.price_close_dollars FROM ("
+                    "SELECT ticker FROM kalshi.main.historical_markets('KXBTCD') LIMIT 1) m, "
+                    "LATERAL kalshi.main.historical_candlesticks(m.ticker, "
+                    "period_interval => 1440) c ORDER BY c.end_period_ts",
                 ),
                 (
                     "Hourly high and low for a settled market",
@@ -365,11 +377,12 @@ class HistoricalCandlesticksFunction(RowTransformFunction[HistoricalCandlestickA
         examples = [
             FunctionExample(
                 sql=(
-                    "SELECT end_period_ts, price_close_dollars "
-                    "FROM kalshi.main.historical_candlesticks('KXBTCD-26JUL0119-T68299.99', "
-                    "period_interval => 1440) ORDER BY end_period_ts"
+                    "SELECT c.end_period_ts, c.price_close_dollars FROM ("
+                    "SELECT ticker FROM kalshi.main.historical_markets('KXBTCD') LIMIT 1) m, "
+                    "LATERAL kalshi.main.historical_candlesticks(m.ticker, "
+                    "period_interval => 1440) c ORDER BY c.end_period_ts"
                 ),
-                description="Daily closing prices for a settled market's final week",
+                description="Daily closing prices for the most recently settled market in a series",
             ),
         ]
 

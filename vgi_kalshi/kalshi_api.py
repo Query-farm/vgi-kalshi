@@ -250,6 +250,39 @@ def _get(
     return response.json()
 
 
+def page(
+    path: str,
+    key: str,
+    params: dict[str, Any] | None = None,
+    *,
+    cursor: str | None = None,
+    client: httpx.Client | None = None,
+    hint: CacheHint | None = None,
+    credentials: Credentials | None = None,
+    page_limit: int = PAGE_LIMIT,
+) -> tuple[list[dict[str, Any]], str | None]:
+    """Fetch exactly one page, returning its rows and the cursor for the next.
+
+    The primitive behind both paging styles. :func:`_paged` loops on this to
+    collect everything, which suits a bounded call; a table function instead
+    holds the cursor in its scan state and calls this once per tick, so DuckDB
+    sees rows from the first page rather than waiting for the last. That
+    difference is what keeps a ``LIMIT 10`` over a large series responsive —
+    and, because a scan blocked inside its first batch cannot be cancelled,
+    it is what keeps such a query from wedging the client outright.
+
+    A ``None`` cursor means this was the final page.
+    """
+    page_params = {**(params or {}), "limit": page_limit}
+    if cursor:
+        page_params["cursor"] = cursor
+    payload = _get(path, page_params, client=client, hint=hint, credentials=credentials)
+    rows = payload.get(key) or []
+    next_cursor = payload.get("cursor") or None
+    # An empty page ends the walk even when a cursor comes back with it.
+    return rows, (next_cursor if rows else None)
+
+
 def _paged(
     path: str,
     key: str,

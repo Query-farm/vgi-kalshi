@@ -48,20 +48,36 @@ unpaginated, so there is no cursor to follow and nothing to key on.
 
 ### Functions
 
-All six market-data functions are **blended** (`RowTransformFunction`), so one
-registration serves both a literal call and a correlated LATERAL:
+Functions come in two shapes, and which one an object gets is decided by the
+endpoint behind it: **if it pages, the function pages.**
+
+A **paged scan** (`markets`, `events`, `historical_markets`) sits on a
+cursor-paged endpoint. It emits one API page per tick, holding the cursor in VGI
+scan state, so `LIMIT` stops early and rows arrive immediately. It cannot be the
+inner side of a correlated LATERAL — drive a join *from* it, not into it.
+
+Everything else is **blended** (`RowTransformFunction`): the fetch is bounded by
+construction — one market, one book, one candlestick window — so a single
+registration serves both a literal call and a LATERAL.
+
+The distinction is not stylistic. A blended function must emit everything for
+its input in one `process()` call, so on a paged endpoint it walks every page
+before DuckDB sees a row: a `LIMIT 10` still pays for the whole series, and
+because a scan blocked inside its first batch cannot be cancelled, the query
+*wedges the client* rather than merely running slowly. `vgi-lint`'s VGI911
+caught exactly that on all three.
 
 | Function | Positional (per-row) | Named |
 |---|---|---|
-| `markets(series_ticker)` | series_ticker | `event_ticker`, `status` |
+| `markets(series_ticker)` *(scan)* | series_ticker | `event_ticker`, `status` |
 | `market(ticker)` | ticker | `cache_ttl` |
 | `orderbook(ticker)` | ticker | `depth`, `cache_ttl` |
 | `candlesticks(series_ticker, ticker)` | both | `period_interval`, `start_ts`, `end_ts` |
 | `trades(ticker)` | ticker | `min_ts`, `max_ts`, `max_rows`, `cache_ttl` |
-| `events(series_ticker)` | series_ticker | `status`, `cache_ttl` |
+| `events(series_ticker)` *(scan)* | series_ticker | `status` |
 | `event(event_ticker)` | event_ticker | `cache_ttl` |
 | `event_metadata(event_ticker)` | event_ticker | `cache_ttl` |
-| `historical_markets(series_ticker)` | series_ticker | `event_ticker` |
+| `historical_markets(series_ticker)` *(scan)* | series_ticker | `event_ticker` |
 | `historical_trades(ticker)` | ticker | `min_ts`, `max_ts`, `max_rows` |
 | `historical_candlesticks(ticker)` | ticker | `period_interval`, `start_ts`, `end_ts` |
 
@@ -149,6 +165,15 @@ rejected, so every optional knob is a named arg; and no function may define
 `finalize`/`finish`, because DuckDB forbids `FinalExecute` under correlated
 LATERAL. Each function is 1→N, so every `emit` carries `parent_rows` provenance
 mapping output rows back to the input row that produced them.
+
+A named argument also cannot receive a correlated column: `LATERAL f(x => t.col)`
+does not bind, because only positional args are per-row inputs. Pass a literal or
+a scalar subquery instead.
+
+**Paged scans** take the other trade. They are ordinary `TableFunctionGenerator`s
+with a `PagedScanState` carrying Kalshi's opaque cursor between `process()`
+ticks — one page fetched, one batch emitted, `finish()` when the cursor runs
+out. Positional args are literals on `params.args` rather than input columns.
 
 **No WebSocket.** Kalshi's WS carries 7 push channels and is a strict subset of
 the REST API. It is also lossy — a dropped connection is a gap. `trades()`

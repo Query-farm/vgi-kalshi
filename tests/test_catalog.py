@@ -27,19 +27,22 @@ from vgi_kalshi.worker import _KALSHI_CATALOG
 
 PACKAGE = Path(__file__).resolve().parent.parent / "vgi_kalshi"
 
+#: Bounded fetches: one market, one book, one window. These stay blended, so
+#: they compose as the inner side of a correlated LATERAL.
 BLENDED = [
-    MarketsFunction,
     MarketFunction,
     OrderbookFunction,
     CandlesticksFunction,
     TradesFunction,
-    EventsFunction,
-    HistoricalMarketsFunction,
     HistoricalTradesFunction,
     HistoricalCandlesticksFunction,
     EventFunction,
     EventMetadataFunction,
 ]
+
+#: Cursor-paged endpoints. These are stateful scans: they emit one API page per
+#: tick so a LIMIT stops early, which a blended function cannot do.
+PAGED_SCANS = [MarketsFunction, EventsFunction, HistoricalMarketsFunction]
 
 
 class TestBlendedRegistration:
@@ -53,6 +56,38 @@ class TestBlendedRegistration:
         """DuckDB rejects LATERAL on a table function registering a finalize callback."""
         for func in BLENDED:
             assert func.has_finalize_override() is False, func.Meta.name
+
+
+class TestPagedScans:
+    """A cursor-paged endpoint must be a stateful scan, not a blended map.
+
+    A blended function has to emit everything for its input in one `process()`
+    call, so it walks every page before DuckDB sees a row — a `LIMIT 10` pays
+    for the whole series, and since a scan blocked inside its first batch cannot
+    be cancelled, the query wedges the client rather than merely being slow.
+    That is what `vgi-lint`'s VGI911 caught on all three of these.
+    """
+
+    def test_paged_scans_are_not_blended(self) -> None:
+        for func in PAGED_SCANS:
+            assert func.get_metadata().input_from_args is False, func.Meta.name
+
+    def test_paged_scans_carry_cursor_state(self) -> None:
+        """State between ticks is the whole mechanism; without it there is no resume."""
+        from vgi_kalshi.paging import PagedScanState
+
+        for func in PAGED_SCANS:
+            state = func.initial_state(None)  # type: ignore[arg-type]
+            assert isinstance(state, PagedScanState), func.Meta.name
+            assert state.cursor == "" and state.done is False, func.Meta.name
+
+    def test_the_two_sets_are_disjoint_and_complete(self) -> None:
+        """Every function is one or the other, so neither list can silently rot."""
+        schema = _KALSHI_CATALOG.schemas[0]
+        classified = {f.Meta.name for f in BLENDED} | {f.Meta.name for f in PAGED_SCANS}
+        scans = {"all_series", "all_exchange_status", "all_historical_cutoff"}
+        assert {f.Meta.name for f in schema.functions} == classified | scans
+        assert not ({f.Meta.name for f in BLENDED} & {f.Meta.name for f in PAGED_SCANS})
 
 
 class TestCatalogShape:
@@ -231,7 +266,7 @@ class TestNoDeadApiSurface:
     """
 
     #: Modules that put an endpoint on the SQL surface.
-    SURFACE = ("markets.py", "reference.py", "historical.py")
+    SURFACE = ("markets.py", "reference.py", "historical.py", "paging.py")
 
     @staticmethod
     def _public_api_functions() -> set[str]:

@@ -109,14 +109,32 @@ _EXECUTABLE_EXAMPLES = json.dumps(
         {
             "name": "markets_carry_their_series",
             "description": "Every market row is stamped with the series it was fetched from.",
-            "sql": ("SELECT bool_and(series_ticker = 'KXBTCD') FROM kalshi.main.markets('KXBTCD') LIMIT 1"),
+            # Bounded deliberately: an aggregate over the bare scan consumes
+            # every page, which is the unbounded shape the paging work exists
+            # to stop paying for.
+            "sql": (
+                "SELECT bool_and(series_ticker = 'KXBTCD') FROM ("
+                "SELECT series_ticker FROM kalshi.main.markets('KXBTCD') LIMIT 200)"
+            ),
             "expected_result": [[True]],
         },
         {
             "name": "events_belong_to_their_series",
             "description": "Events under a series all report that series.",
-            "sql": "SELECT bool_and(series_ticker = 'KXBTCD') FROM kalshi.main.events('KXBTCD')",
+            "sql": (
+                "SELECT bool_and(series_ticker = 'KXBTCD') FROM ("
+                "SELECT series_ticker FROM kalshi.main.events('KXBTCD') LIMIT 100)"
+            ),
             "expected_result": [[True]],
+        },
+        {
+            "name": "a_limit_stops_the_scan_early",
+            "description": (
+                "A paged scan yields its first rows without walking every page — the property "
+                "that keeps a LIMIT over a large series from wedging the client."
+            ),
+            "sql": "SELECT count(*) FROM (SELECT ticker FROM kalshi.main.markets('KXBTCD') LIMIT 5)",
+            "expected_result": [[5]],
         },
         {
             "name": "prices_are_exact_decimals",
@@ -574,9 +592,9 @@ _EXCHANGE_STATUS_DOCS = docs(
             "FROM kalshi.main.exchange_status ORDER BY exchange_index",
         ),
         (
-            "Venues that are up but not currently trading",
-            "SELECT description FROM kalshi.main.exchange_status "
-            "WHERE exchange_active AND NOT trading_active",
+            "Which venues are halted, if any",
+            "SELECT description, trading_active FROM kalshi.main.exchange_status "
+            "ORDER BY trading_active, exchange_index",
         ),
     ),
     extra={
