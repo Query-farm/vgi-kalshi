@@ -193,7 +193,7 @@ metadata, so if Kalshi changes a TTL, this follows automatically.
 | `/markets/{ticker}` | *(nothing)* | uncached unless `cache_ttl` |
 | `/markets/{ticker}/orderbook` | *(nothing)* | uncached unless `cache_ttl` |
 | `/markets/trades` | *(nothing)* | uncached unless `cache_ttl` |
-| `/events` | *(nothing)* | uncached unless `cache_ttl` |
+| `/events` | *(nothing)* | uncached unless `cache_ttl` — **worth setting** |
 | `/series/…/candlesticks` | *(nothing)* | see below |
 
 A response counts as cacheable only if it declares a non-zero `max-age` *and*
@@ -212,6 +212,22 @@ rather than failing the query.
 change once its period has closed, so a window ending before the current period
 began is cached for a day. A window running up to `now` contains a candle that
 is still forming and is not cached at all.
+
+**What is cached by default is narrow, deliberately.** Only `series`,
+`markets` and `exchange_status` carry a TTL without being asked, because those
+are the only endpoints Kalshi declares one for (15s, 15s and 1s). Everything
+else is either live-by-default or cached by immutability:
+
+| Function | Cached because |
+|---|---|
+| `series`, `markets`, `exchange_status` | the origin says so |
+| `candlesticks` | the window is closed, so the candles cannot change |
+| `historical_*` | the archive is immutable |
+| `market`, `orderbook`, `trades`, `events` | only if you pass `cache_ttl` |
+
+`events()` is the one to watch: `/events` declares no freshness *and* is the
+most aggressively rate-limited endpoint here (~4 req/s against ~29 for the
+rest), so a `cache_ttl` matters more there than anywhere else.
 
 **Opt-in caching for live data.** `market()`, `orderbook()`, `trades()` and
 `events()` take a `cache_ttl` named arg, default `0` (off). Setting it also
@@ -359,7 +375,7 @@ snapshot of a moving boundary has no honest answer to.
 ## Tests
 
 ```bash
-pytest              # 141 offline tests
+pytest              # 170 offline tests
 pytest -m live      # 31 tests against the public API
 ```
 

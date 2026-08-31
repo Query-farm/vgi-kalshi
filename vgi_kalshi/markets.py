@@ -930,6 +930,13 @@ class EventsArgs:
 
     series_ticker: Annotated[str, Arg(0, doc="Series ticker, e.g. 'KXBTCD'")]
     status: Annotated[str, Arg("status", doc="Event status filter", default="")] = ""
+    #: `/events` declares no freshness and is the most aggressively rate-limited
+    #: endpoint Kalshi exposes — roughly 4 requests a second against ~29 for the
+    #: rest — so an opt-in TTL matters more here than anywhere else.
+    cache_ttl: Annotated[
+        int,
+        Arg("cache_ttl", doc="Seconds to cache this result (0 = off)", default=0, ge=0),
+    ] = 0
 
 
 @init_single_worker
@@ -991,6 +998,7 @@ class EventsFunction(TableFunctionGenerator[EventsArgs, PagedScanState]):
                 "status": params.args.status or None,
             },
             page_limit=api.EVENTS_PAGE_LIMIT,
+            opt_in_ttl=params.args.cache_ttl,
         )
 
 

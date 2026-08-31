@@ -103,9 +103,18 @@ class CacheHint:
 
     Passing one of these into an API call lets a table function forward the
     origin's actual policy to DuckDB's result cache instead of inventing one.
-    ``max_age`` is the **minimum** seen across a paged call (the shortest-lived
-    page bounds the whole result), and stays ``None`` when the origin declared
-    nothing — which is itself the signal that the data is live.
+    ``max_age`` is the **minimum** seen across every response folded into it,
+    so the shortest-lived page bounds the result — which is what :func:`_paged`
+    wants, since it collects a whole call before anything is advertised.
+
+    A paged *scan* is different: it holds one of these per tick, so what it
+    advertises is the first page's directive rather than the minimum over all
+    of them. That is not a weakening in practice — a given endpoint sends the
+    same policy on every page — and it is unavoidable, since cache metadata
+    rides on the first emitted batch and later pages have not been fetched yet.
+
+    ``max_age`` stays ``None`` when the origin declared nothing, which is itself
+    the signal that the data is live.
     """
 
     max_age: int | None = None

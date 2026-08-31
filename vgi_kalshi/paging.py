@@ -60,7 +60,7 @@ def emit_page(
     query: dict[str, Any],
     page_limit: int = PAGE_LIMIT,
     stamp: Callable[[Sequence[dict[str, Any]]], None] | None = None,
-    cacheable: bool = True,
+    opt_in_ttl: int = 0,
 ) -> None:
     """Fetch one page into one batch, and record where to resume.
 
@@ -75,8 +75,9 @@ def emit_page(
         stamp: Optional hook to add derived columns to the page's rows before
             they are built, used where a column is known to the caller but
             absent from Kalshi's payload.
-        cacheable: Whether to forward the origin's freshness directive. False
-            for the archive, whose caller sets its own policy.
+        opt_in_ttl: Seconds to cache for when the origin declares nothing.
+            Ignored when it does declare — the exchange's own policy always
+            wins over a caller's guess.
     """
     if state.done:
         out.finish()
@@ -95,11 +96,15 @@ def emit_page(
         stamp(rows)
     state.cursor = cursor or ""
     state.done = cursor is None
-    cache_control = (
-        CacheControl(ttl=hint.max_age, stale_if_error=STALE_IF_ERROR)
-        if cacheable and hint.cacheable
-        else None
-    )
+    # Cache metadata rides on the first emitted batch, which for a paged scan is
+    # the first page. Every page carries it so the walk is self-describing at any
+    # point, but the first is the one the client reads.
+    if hint.cacheable:
+        cache_control = CacheControl(ttl=hint.max_age, stale_if_error=STALE_IF_ERROR)
+    elif opt_in_ttl > 0:
+        cache_control = CacheControl(ttl=opt_in_ttl, stale_if_error=STALE_IF_ERROR)
+    else:
+        cache_control = None
     out.emit(batch_from_rows(rows, params.output_schema), cache_control=cache_control)
 
 
