@@ -10,6 +10,10 @@ requires-python = ">=3.13"
 dependencies = [
     "vgi-python[http]>=0.31.0",
     "httpx>=0.27",
+    # Brotli lets httpx advertise `br`, which Kalshi honours. The series
+    # catalog is 15.6 MB of JSON: brotli ships it in 1.35 MB against gzip's
+    # 2.06 MB, and decodes marginally faster. httpx picks it up on import.
+    "brotli>=1.1",
     # RSA-PSS request signing for authenticated Kalshi access. Required even
     # though authentication is optional: the signer is imported at catalog
     # build time to register the `kalshi` secret type.

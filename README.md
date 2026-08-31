@@ -190,6 +190,19 @@ Measured against the public API, unauthenticated:
 else — so a query that fans out over events needs `cache_ttl`, not more
 parallelism.
 
+**Transport.** Responses are compressed: httpx advertises `br` (Brotli is a
+declared dependency for this reason) and Kalshi honours it. On the `series`
+catalog that is 1.35 MB on the wire against gzip's 2.06 MB and 15.6 MB raw — a
+35% saving over gzip, and Brotli decodes marginally *faster* here, so it costs
+nothing. Kalshi ignores `zstd`. The connection stays HTTP/1.1: the API does
+negotiate HTTP/2, but requests inside a scan are issued sequentially, so
+multiplexing buys nothing — measured at 34.2 ms/request over HTTP/2 against
+34.6 ms over HTTP/1.1, a ~1% difference not worth the `h2` dependency. Note that
+34 ms/request is ~29 requests/second, which is the rate ceiling above: **a
+fan-out is already running as fast as Kalshi will allow**, so issuing the
+requests concurrently would only reach the 429s sooner. `cache_ttl` is the only
+real lever.
+
 `_get` retries five times with exponential backoff (~0.5s → 8s) on a 429, on a
 transient 5xx, and on a dropped connection — a `GET` is idempotent, and
 retrying only the rate limiter would let one reset connection abort a fan-out

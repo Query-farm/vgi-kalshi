@@ -13,6 +13,7 @@ import re
 import tomllib
 from pathlib import Path
 
+import httpx
 import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -59,3 +60,34 @@ class TestScriptHeaders:
         """The scripts also pull vgi-rpc directly, but nothing beyond that."""
         extra = _script_dependencies(ROOT / script) - project_dependencies - {"vgi-rpc"}
         assert extra == set(), f"{script} declares dependencies the project does not: {sorted(extra)}"
+
+
+class TestTransport:
+    """Content encoding is negotiated by what is installed, not by our code.
+
+    httpx builds `Accept-Encoding` from the codecs it can find at import time,
+    so dropping the brotli dependency would not fail anything — it would just
+    silently downgrade the `series` scan from 1.35 MB to 2.06 MB on the wire.
+    A behavioural check is the only thing that notices.
+    """
+
+    @staticmethod
+    def _request_headers() -> httpx.Headers:
+        seen: dict[str, httpx.Headers] = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            seen["headers"] = request.headers
+            return httpx.Response(200, json={})
+
+        from vgi_kalshi import kalshi_api
+
+        with httpx.Client(transport=httpx.MockTransport(handler), timeout=kalshi_api.TIMEOUT) as client:
+            client.get("https://example.invalid/x")
+        return seen["headers"]
+
+    def test_brotli_is_offered(self) -> None:
+        """Kalshi serves `br` when offered; it is 35% smaller than its gzip."""
+        assert "br" in self._request_headers()["accept-encoding"]
+
+    def test_gzip_is_still_offered_as_a_fallback(self) -> None:
+        assert "gzip" in self._request_headers()["accept-encoding"]
