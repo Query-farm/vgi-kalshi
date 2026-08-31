@@ -288,6 +288,12 @@ It also caps the response at 10,000 candles across the whole call and truncates
 silently past that, so the batch is sized by the window: 100 markets of hourly
 candles over a day, but only 6 markets of one-minute candles.
 
+**One connection, reused.** A paged scan fetches a page per tick, and the
+framework owns the loop, so there is no scope to hold a client open across the
+walk. `kalshi_api` keeps a process-wide pool for that reason — a client per page
+measured 138 ms against 50 ms warm, a TLS handshake paid on every page of every
+scan. `reset_shared_client()` forces a reconnect.
+
 **Transport.** Responses are compressed: httpx advertises `br` (Brotli is a
 declared dependency for this reason) and Kalshi honours it. On the `series`
 catalog that is 1.35 MB on the wire against gzip's 2.06 MB and 15.6 MB raw — a
@@ -436,7 +442,7 @@ of a row, and a shipped example that could not bind — none of which any of the
 ## Tests
 
 ```bash
-pytest              # 182 offline tests
+pytest              # 185 offline tests
 pytest -m live      # 31 tests against the public API
 ```
 
