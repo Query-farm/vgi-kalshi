@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Resolve from PyPI, never from the sibling checkouts `[tool.uv.sources]`
+  # points at for local development. This is also the check that the published
+  # dependencies are actually sufficient — the entry-point scripts carry their
+  # own PEP-723 headers, and those drifted from pyproject once already.
+  UV_NO_SOURCES: "1"
+
+jobs:
+  check:
+    name: Lint, types, offline tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --no-sources --all-extras
+      - name: Ruff (lint)
+        run: uv run --no-sources ruff check .
+      - name: Ruff (format)
+        run: uv run --no-sources ruff format --check .
+      - name: Offline tests
+        run: uv run --no-sources pytest -q
+      - name: Entry points start without the dev checkouts
+        run: |
+          uv run --no-project kalshi_worker.py --help > /dev/null
+          uv run --no-project serve.py --help > /dev/null
+
+  catalog:
+    name: Catalog metadata (vgi-lint, structural)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --no-sources
+      # Structural tier only: no network, so this is safe to run on every push.
+      # The behavioural tier hits the live API and is rate-limited, so it runs
+      # on a schedule instead — see live.yml.
+      - name: vgi-lint (structural)
+        run: >
+          uvx --no-sources vgi-lint-check==0.81.1 lint "uv run --no-sources kalshi_worker.py"
+          --no-execute --no-check-links --audit-waivers --fail-on warning

@@ -1,10 +1,12 @@
 # /// script
 # requires-python = ">=3.13"
-# dependencies = ["vgi-python[http]", "vgi-rpc", "httpx", "cryptography>=42", "brotli>=1.1"]
-#
-# [tool.uv.sources]
-# vgi-python = { path = "../vgi-python" }
-# vgi-rpc = { path = "../vgi-rpc" }
+# dependencies = [
+#     "vgi-python[http]>=0.31.0",
+#     "vgi-rpc>=0.44.1",
+#     "httpx>=0.27",
+#     "cryptography>=42",
+#     "brotli>=1.1",
+# ]
 # ///
 """Stdio entry point for the Kalshi VGI worker (``uv run``).
 

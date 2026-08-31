@@ -23,10 +23,26 @@ uv run serve.py --port 8000        # HTTP
 ATTACH 'kalshi' (TYPE vgi, LOCATION 'uv run kalshi_worker.py');
 ```
 
-Both scripts carry PEP-723 headers that resolve `vgi-python` and `vgi-rpc` from
-sibling checkouts (`../vgi-python`, `../vgi-rpc`), matching this project's
-`[tool.uv.sources]`. Installing the package instead (`pip install .`) uses the
-published versions from `[project.dependencies]`.
+Both scripts carry PEP-723 headers pinning the published dependencies, so they
+run from a fresh clone with nothing installed. For a deployment, install the
+package and use its console script instead — it does not depend on the working
+directory, which the script form does:
+
+```bash
+pip install vgi-kalshi
+```
+
+```sql
+ATTACH 'kalshi' (TYPE vgi, LOCATION 'vgi-kalshi');
+```
+
+### Developing against a local vgi-python
+
+`[tool.uv.sources]` points `vgi-python` and `vgi-rpc` at sibling checkouts, so
+`uv sync` and `uv run vgi-kalshi` pick up local edits to the framework. The
+entry-point scripts deliberately do **not**: they resolve from PyPI so a clone
+works anywhere. Pass `--no-sources` to ignore the local checkouts entirely,
+which is what CI does — and what proves the published dependencies are enough.
 
 ## Surface
 
@@ -396,6 +412,26 @@ exposed as a table, which all three of ours are — the rule matches on name, an
 the names differ deliberately because a function and a table cannot share one in
 a schema. VGI807 asks `historical_cutoff` for a primary key, which a one-row
 snapshot of a moving boundary has no honest answer to.
+
+## CI
+
+`.github/workflows/ci.yml` runs on every push: ruff (lint and format), the
+offline tests, a check that both entry-point scripts start without the dev
+checkouts, and `vgi-lint`'s structural tier with `--audit-waivers`. All of it
+resolves from PyPI (`UV_NO_SOURCES=1`), so it also proves the published
+dependencies are sufficient.
+
+`.github/workflows/live.yml` runs daily, never concurrently, and is the half
+that touches Kalshi: the live tests, then `vgi-lint --execute`, which runs every
+shipped example against the real API. That tier is deliberately not on push —
+Kalshi rate-limits unauthenticated traffic to ~29 requests/second overall and
+~4/s on `/events`, so two concurrent runs throttle each other into failures that
+say nothing about the code.
+
+It earns the wait. The behavioural tier has caught, on separate runs, a scan
+that wedged the client uncancellably, a timestamp that crashed every consumer
+of a row, and a shipped example that could not bind — none of which any of the
+182 offline tests could see.
 
 ## Tests
 

@@ -1,0 +1,51 @@
+name: Live
+
+# The tests and lint tiers that hit Kalshi's public API.
+#
+# These are deliberately NOT on push. Kalshi rate-limits unauthenticated traffic
+# to roughly 29 requests a second overall and ~4/s on /events, so two concurrent
+# runs throttle each other into failures that say nothing about the code. One
+# scheduled run, never concurrent, is the honest cadence.
+
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+
+concurrency:
+  # Never two of these at once, across branches — they share a rate limit.
+  group: kalshi-live
+  cancel-in-progress: false
+
+jobs:
+  live:
+    name: Live API tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --no-sources
+      - name: Live tests
+        run: uv run --no-sources pytest -q -m live -p no:randomly
+
+  behavioural:
+    name: vgi-lint (executes every example)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    needs: live
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --no-sources
+      # Serial on purpose: every example is a real API call, and this tier has
+      # caught a client-wedging scan and two scan-killing crashes that no
+      # offline test could see. Slow is the price of that.
+      - name: vgi-lint (structural + behavioural)
+        run: >
+          uvx --no-sources vgi-lint-check==0.81.1 lint "uv run --no-sources kalshi_worker.py"
+          --execute-concurrency 1 --no-check-links --audit-waivers --fail-on error

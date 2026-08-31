@@ -6,6 +6,19 @@ readme = "README.md"
 license = "MIT"
 authors = [{ name = "Query Farm", email = "hello@query.farm" }]
 keywords = ["vgi", "duckdb", "arrow", "kalshi", "prediction-markets", "sql"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Financial and Insurance Industry",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Database",
+    "Topic :: Office/Business :: Financial",
+    "Typing :: Typed",
+]
 requires-python = ">=3.13"
 dependencies = [
     "vgi-python[http]>=0.31.0",
@@ -25,6 +38,11 @@ serve = ["vgi-python[http,oauth]>=0.31.0", "vgi-rpc[sentry]>=0.44.1"]
 
 [dependency-groups]
 dev = ["pytest>=8", "ruff>=0.15"]
+
+[project.urls]
+Homepage = "https://github.com/Query-farm/vgi-kalshi"
+Repository = "https://github.com/Query-farm/vgi-kalshi"
+Issues = "https://github.com/Query-farm/vgi-kalshi/issues"
 
 [project.scripts]
 vgi-kalshi = "vgi_kalshi.worker:main"
