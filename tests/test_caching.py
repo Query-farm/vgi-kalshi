@@ -314,3 +314,37 @@ class TestPaging:
         client = httpx.Client(transport=httpx.MockTransport(handler))
         kalshi_api.events("KXBTCD", client=client)
         assert seen[0]["limit"] == str(kalshi_api.EVENTS_PAGE_LIMIT)
+
+
+class TestMalformedResponses:
+    """A 200 that is not JSON is a CDN error page, not an API response.
+
+    Raised bare it surfaces as `JSONDecodeError: Expecting value: line 1
+    column 1` — no path, no status, no body — which tells an operator nothing
+    about which call failed or why.
+    """
+
+    def test_a_non_json_200_names_the_call(self) -> None:
+        from vgi_kalshi import kalshi_api
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                200, text="<html>502 Bad Gateway</html>", headers={"content-type": "text/html"}
+            )
+
+        client = httpx.Client(transport=httpx.MockTransport(handler))
+        with pytest.raises(kalshi_api.KalshiError) as excinfo:
+            kalshi_api.series_list(client=client)
+        message = str(excinfo.value)
+        assert "/series" in message
+        assert "text/html" in message
+        assert "502 Bad Gateway" in message
+
+    def test_a_valid_json_200_is_untouched(self) -> None:
+        from vgi_kalshi import kalshi_api
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json={"series": [{"ticker": "K"}]})
+
+        client = httpx.Client(transport=httpx.MockTransport(handler))
+        assert kalshi_api.series_list(client=client) == [{"ticker": "K"}]

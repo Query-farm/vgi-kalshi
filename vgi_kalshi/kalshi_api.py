@@ -266,7 +266,8 @@ def _get(
         The decoded JSON response body.
 
     Raises:
-        KalshiError: The response status was not 2xx after retries.
+        KalshiError: The response status was not 2xx after retries, or a 2xx
+            body was not JSON — a CDN error page served as 200, say.
         httpx.TransportError: Every attempt failed to reach the API.
     """
     # A sequence of pairs, not a mapping, when a parameter must repeat
@@ -298,7 +299,18 @@ def _get(
         hint.observe(response)
     if response.status_code >= 400:
         raise KalshiError(response.status_code, path, response.text)
-    return response.json()
+    try:
+        return response.json()
+    except ValueError as exc:
+        # A 200 carrying something other than JSON is a CDN error page, not an
+        # API response. Raised bare, it surfaces as `JSONDecodeError: Expecting
+        # value: line 1 column 1` — no path, no status, no body — which is
+        # unactionable in a log. KalshiError carries all three.
+        raise KalshiError(
+            response.status_code,
+            path,
+            f"expected JSON, got {response.headers.get('content-type', 'no content-type')}: {response.text}",
+        ) from exc
 
 
 def page(
