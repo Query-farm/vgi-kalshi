@@ -69,7 +69,7 @@ _EXAMPLE_QUERIES = examples(
         "The most recent trades on the busiest open market in a series",
         "SELECT t.created_time, t.taker_side, t.yes_price_dollars, t.count_fp FROM ("
         "SELECT ticker FROM kalshi.main.markets('KXBTCD') WHERE status = 'active' "
-        "LIMIT 1) m, "
+        "AND volume_24h_fp > 0 LIMIT 1) m, "
         "LATERAL kalshi.main.trades(m.ticker, max_rows => 100) t "
         "ORDER BY t.created_time DESC",
     ),
@@ -80,7 +80,7 @@ _EXAMPLE_QUERIES = examples(
     (
         "The busiest open market's current quote",
         "SELECT ticker, status, yes_bid_dollars, yes_ask_dollars "
-        "FROM kalshi.main.market((SELECT ticker FROM kalshi.main.markets('KXBTCD') WHERE status = 'active' LIMIT 1))",
+        "FROM kalshi.main.market((SELECT ticker FROM kalshi.main.markets('KXBTCD') WHERE status = 'active' AND volume_24h_fp > 0 LIMIT 1))",
     ),
     (
         "Crypto series read from the scan function behind the table",

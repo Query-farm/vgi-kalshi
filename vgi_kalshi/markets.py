@@ -416,7 +416,7 @@ class MarketFunction(RowTransformFunction[TickerArgs]):
                 (
                     "Current quote for one market by ticker",
                     "SELECT ticker, status, yes_bid_dollars, yes_ask_dollars "
-                    "FROM kalshi.main.market((SELECT ticker FROM kalshi.main.markets('KXBTCD') WHERE status = 'active' LIMIT 1))",
+                    "FROM kalshi.main.market((SELECT ticker FROM kalshi.main.markets('KXBTCD') WHERE status = 'active' AND volume_24h_fp > 0 LIMIT 1))",
                 ),
             ),
         )
@@ -424,7 +424,7 @@ class MarketFunction(RowTransformFunction[TickerArgs]):
             FunctionExample(
                 sql=(
                     "SELECT ticker, status, yes_bid_dollars, yes_ask_dollars "
-                    "FROM kalshi.main.market((SELECT ticker FROM kalshi.main.markets('KXBTCD') WHERE status = 'active' LIMIT 1))"
+                    "FROM kalshi.main.market((SELECT ticker FROM kalshi.main.markets('KXBTCD') WHERE status = 'active' AND volume_24h_fp > 0 LIMIT 1))"
                 ),
                 description="Current quote for one market by ticker",
             ),
@@ -522,7 +522,7 @@ class OrderbookFunction(RowTransformFunction[OrderbookArgs]):
                 (
                     "Full depth on both sides of one market's book",
                     "SELECT side, price_dollars, count_fp "
-                    "FROM kalshi.main.orderbook((SELECT ticker FROM kalshi.main.markets('KXBTCD') WHERE status = 'active' LIMIT 1)) "
+                    "FROM kalshi.main.orderbook((SELECT ticker FROM kalshi.main.markets('KXBTCD') WHERE status = 'active' AND volume_24h_fp > 0 LIMIT 1)) "
                     "ORDER BY side, price_dollars DESC",
                 ),
                 (
@@ -819,7 +819,7 @@ class TradesFunction(RowTransformFunction[TradesArgs]):
                     "The most recent trades on the busiest open market in a series",
                     "SELECT t.created_time, t.taker_side, t.yes_price_dollars, t.count_fp FROM ("
                     "SELECT ticker FROM kalshi.main.markets('KXBTCD') WHERE status = 'active' "
-                    "LIMIT 1) m, "
+                    "AND volume_24h_fp > 0 LIMIT 1) m, "
                     "LATERAL kalshi.main.trades(m.ticker, max_rows => 100) t "
                     "ORDER BY t.created_time DESC",
                 ),
@@ -827,7 +827,7 @@ class TradesFunction(RowTransformFunction[TradesArgs]):
                     "Volume-weighted average price from the tape",
                     "SELECT sum(t.yes_price_dollars * t.count_fp) / sum(t.count_fp) AS vwap_dollars "
                     "FROM (SELECT ticker FROM kalshi.main.markets('KXBTCD') "
-                    "WHERE status = 'active' LIMIT 1) m, "
+                    "WHERE status = 'active' AND volume_24h_fp > 0 LIMIT 1) m, "
                     "LATERAL kalshi.main.trades(m.ticker, max_rows => 500) t",
                 ),
             ),
@@ -837,7 +837,7 @@ class TradesFunction(RowTransformFunction[TradesArgs]):
                 sql=(
                     "SELECT t.created_time, t.taker_side, t.yes_price_dollars, t.count_fp FROM ("
                     "SELECT ticker FROM kalshi.main.markets('KXBTCD') WHERE status = 'active' "
-                    "LIMIT 1) m, "
+                    "AND volume_24h_fp > 0 LIMIT 1) m, "
                     "LATERAL kalshi.main.trades(m.ticker, max_rows => 100) t "
                     "ORDER BY t.created_time DESC"
                 ),
