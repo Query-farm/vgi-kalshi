@@ -13,7 +13,7 @@ from vgi_kalshi.markets import (
     OrderbookFunction,
     TradesFunction,
 )
-from vgi_kalshi.reference import AllSeriesFunction
+from vgi_kalshi.reference import AllSeriesFunction, ExchangeStatusFunction
 from vgi_kalshi.worker import _KALSHI_CATALOG
 
 BLENDED = [
@@ -50,13 +50,14 @@ class TestCatalogShape:
             "trades",
             "events",
             "all_series",
+            "all_exchange_status",
         }
         assert not any(n.startswith("kalshi_") for n in names)
 
-    def test_series_is_a_real_table(self) -> None:
-        tables = _KALSHI_CATALOG.schemas[0].tables
-        assert [t.name for t in tables] == ["series"]
-        assert tables[0].function is AllSeriesFunction
+    def test_unkeyed_scans_are_exposed_as_tables(self) -> None:
+        """A scan that needs no argument reads better as a table than a function."""
+        tables = {t.name: t.function for t in _KALSHI_CATALOG.schemas[0].tables}
+        assert tables == {"series": AllSeriesFunction, "exchange_status": ExchangeStatusFunction}
 
     def test_table_name_does_not_collide_with_a_function(self) -> None:
         """`series` the table is backed by `all_series` the function, so both can coexist."""

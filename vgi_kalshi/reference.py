@@ -34,7 +34,12 @@ from vgi_kalshi import auth
 from vgi_kalshi import kalshi_api as api
 from vgi_kalshi.kalshi_api import STALE_IF_ERROR, CacheHint
 from vgi_kalshi.meta import docs, examples
-from vgi_kalshi.schemas import SERIES_SCHEMA, batch_from_rows
+from vgi_kalshi.schemas import (
+    EXCHANGE_STATUS_SCHEMA,
+    SERIES_SCHEMA,
+    batch_from_rows,
+    flatten_exchange_status,
+)
 
 
 @init_single_worker
@@ -48,6 +53,7 @@ class AllSeriesFunction(TableFunctionGenerator[None, None]):
         description = "Every Kalshi series (the scan backing the `series` table)"
         categories = ["reference"]
         required_secrets = [SecretLookupEntry(secret_type=auth.SECRET_TYPE)]
+        projection_pushdown = True
         tags = docs(
             category="reference",
             result_schema=SERIES_SCHEMA,
@@ -106,8 +112,85 @@ class AllSeriesFunction(TableFunctionGenerator[None, None]):
         cache_control = (
             CacheControl(ttl=hint.max_age, stale_if_error=STALE_IF_ERROR) if hint.cacheable else None
         )
-        out.emit(batch_from_rows(rows, cls.FIXED_SCHEMA), cache_control=cache_control)
+        out.emit(batch_from_rows(rows, params.output_schema), cache_control=cache_control)
         out.finish()
 
 
-REFERENCE_FUNCTIONS: list[type] = [AllSeriesFunction]
+@init_single_worker
+class ExchangeStatusFunction(TableFunctionGenerator[None, None]):
+    """Whether the exchange is open — the scan behind the ``exchange_status`` table."""
+
+    FIXED_SCHEMA: ClassVar[pa.Schema] = EXCHANGE_STATUS_SCHEMA
+
+    class Meta:
+        name = "all_exchange_status"
+        description = "Exchange and per-venue trading status (the scan backing `exchange_status`)"
+        categories = ["reference"]
+        required_secrets = [SecretLookupEntry(secret_type=auth.SECRET_TYPE)]
+        projection_pushdown = True
+        tags = docs(
+            category="reference",
+            result_schema=EXCHANGE_STATUS_SCHEMA,
+            llm=(
+                "Whether Kalshi is open for trading right now, per venue. Prefer the "
+                "`exchange_status` table, which scans this. Worth checking before concluding "
+                "that an empty order book or a stale quote means something — outside trading "
+                "hours it means the venue is closed. Kalshi runs several venues (Default, "
+                "Combos, Crypto, sports) that open and close independently, so this returns "
+                "one row per venue plus the exchange-wide flags repeated on each."
+            ),
+            md=(
+                "One row per trading venue, plus the exchange-wide flags on every row.\n\n"
+                "### Why this is per-venue\n\n"
+                "Kalshi is not one market. Crypto trades around the clock while sports venues "
+                "follow their seasons, so `exchange_active` on its own does not tell you "
+                "whether the contract you care about is tradeable. Match the venue by its "
+                "`description`, or read the `*_overall` columns to ignore the distinction.\n\n"
+                "### Freshness\n\n"
+                "This is the most volatile thing Kalshi publishes and it says so: "
+                "`Cache-Control: public, max-age=1`, the shortest TTL anywhere in the API. "
+                "That one second is forwarded to the result cache rather than invented here."
+            ),
+            example_queries=examples(
+                (
+                    "Venues that are up but not currently trading, read from the scan function",
+                    "SELECT description FROM kalshi.main.all_exchange_status() "
+                    "WHERE exchange_active AND NOT trading_active",
+                ),
+                (
+                    "Every venue's status, newest venue ids last",
+                    "SELECT exchange_index, description, exchange_active, trading_active "
+                    "FROM kalshi.main.all_exchange_status() ORDER BY exchange_index",
+                ),
+            ),
+        )
+        examples = [
+            FunctionExample(
+                sql=(
+                    "SELECT description FROM kalshi.main.all_exchange_status() "
+                    "WHERE exchange_active AND NOT trading_active"
+                ),
+                description="Venues that are up but not currently trading, read from the scan function",
+            ),
+        ]
+
+    @classmethod
+    def on_bind(cls, params: BindParams[None]) -> BindResponse:
+        return BindResponse(output_schema=cls.FIXED_SCHEMA)
+
+    @classmethod
+    def process(cls, params: ProcessParams[None], state: None, out: OutputCollector) -> None:
+        """Fetch the status, forwarding Kalshi's one-second freshness directive."""
+        hint = CacheHint()
+        payload = api.exchange_status(
+            hint=hint, credentials=auth.for_call(params.secrets, params.attach_opaque_data)
+        )
+        cache_control = (
+            CacheControl(ttl=hint.max_age, stale_if_error=STALE_IF_ERROR) if hint.cacheable else None
+        )
+        rows = flatten_exchange_status(payload)
+        out.emit(batch_from_rows(rows, params.output_schema), cache_control=cache_control)
+        out.finish()
+
+
+REFERENCE_FUNCTIONS: list[type] = [AllSeriesFunction, ExchangeStatusFunction]

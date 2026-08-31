@@ -120,6 +120,55 @@ def _opt_in_cache_control(ttl: int, *, per_value: bool) -> CacheControl | None:
     return CacheControl(ttl=ttl, stale_if_error=STALE_IF_ERROR, per_value=per_value)
 
 
+#: Kalshi's `status` filter vocabulary is not the vocabulary its `status` column
+#: reports, so a `WHERE status = 'active'` predicate can only be pushed down
+#: through an explicit mapping. Only pairs verified against the live API are
+#: listed: for one complete event, `status => 'open'` returned exactly the 50
+#: markets whose column read `active`, dropping none and adding none
+#: (`tests/test_live.py::TestStatusPushdown` re-checks this).
+#:
+#: Absent entries are deliberate. `closed` and `determined` appear in one
+#: vocabulary or the other but their correspondence is unverified, and pushing
+#: an unproven mapping would silently *drop* rows — the one failure a pushdown
+#: must never have, since DuckDB re-applies the predicate to what we return but
+#: cannot recover what we never fetched.
+_STATUS_COLUMN_TO_FILTER = {
+    "active": "open",
+    "initialized": "unopened",
+    "finalized": "settled",
+}
+
+
+def _pushed_market_filters(params: ProcessParams[MarketsArgs]) -> tuple[str | None, str | None]:
+    """Turn a pushed-down WHERE into Kalshi query parameters, conservatively.
+
+    Returns ``(event_ticker, status)`` to add to the request. Both are pure
+    optimizations: DuckDB re-applies the predicate to whatever comes back, so a
+    filter we decline to push costs bandwidth, never correctness. Pushing one
+    that is *wrong* is the dangerous direction, which is why only exact
+    correspondences are used.
+
+    An explicit named argument always wins over an inferred one — the caller
+    said what they wanted, and the predicate will narrow the result anyway.
+    """
+    filters = params.current_pushdown_filters
+    if filters is None:
+        return None, None
+
+    def constant(column: str) -> str | None:
+        scalar = filters.get_column_constant(column)
+        value = scalar.as_py() if scalar is not None else None
+        return str(value) if isinstance(value, str) and value else None
+
+    event = None if params.args.event_ticker else constant("event_ticker")
+    status = None
+    if not params.args.status and (reported := constant("status")):
+        # `event_ticker` needs no translation; `status` does, and only for pairs
+        # proven equivalent.
+        status = _STATUS_COLUMN_TO_FILTER.get(reported)
+    return event, status
+
+
 def _cap_depth(levels: list[dict[str, Any]], depth: int) -> list[dict[str, Any]]:
     """Keep only the best ``depth`` levels per side.
 
@@ -151,6 +200,11 @@ def _emit_fanout(
     ``parent_rows[i]`` is the index, within this call's input batch, of the row
     that produced output row ``i``. Cache metadata rides on the first emitted
     batch, which is this one — each of these functions emits exactly once.
+
+    ``schema`` is the caller's ``params.output_schema``, which is the *projected*
+    schema: with ``projection_pushdown`` declared, a ``SELECT ticker`` narrows it
+    to one column and only that column is built. Rows are dicts, so the columns
+    that were projected away simply are not read.
     """
     batch = batch_from_rows(rows, schema)
     cast("VgiOutputCollector", out).emit(batch, parent_rows=list(parent_rows), cache_control=cache_control)
@@ -199,6 +253,10 @@ class MarketsFunction(RowTransformFunction[MarketsArgs]):
         description = "Markets under a Kalshi series (series_ticker required)"
         categories = ["market-data", "blended"]
         required_secrets = [SecretLookupEntry(secret_type=auth.SECRET_TYPE)]
+        projection_pushdown = True
+        #: `filters_exactly_applied` stays False on purpose: only some predicates
+        #: become Kalshi query parameters, so DuckDB must re-check them all.
+        filter_pushdown = True
         tags = docs(
             category="markets",
             result_schema=MARKET_SCHEMA,
@@ -271,14 +329,15 @@ class MarketsFunction(RowTransformFunction[MarketsArgs]):
         parents: list[int] = []
         hint = CacheHint()
         credentials = auth.for_call(params.secrets, params.attach_opaque_data)
+        pushed_event, pushed_status = _pushed_market_filters(params)
         with api.open_client() as client:
             for index, ticker in enumerate(series):
                 if ticker is None:
                     continue
                 found = api.markets(
                     str(ticker),
-                    event_ticker=params.args.event_ticker or None,
-                    status=params.args.status or None,
+                    event_ticker=params.args.event_ticker or pushed_event,
+                    status=params.args.status or pushed_status,
                     client=client,
                     hint=hint,
                     credentials=credentials,
@@ -291,7 +350,7 @@ class MarketsFunction(RowTransformFunction[MarketsArgs]):
                     row["series_ticker"] = str(ticker)
                 rows.extend(found)
                 parents.extend([index] * len(found))
-        _emit_fanout(out, cls.FIXED_SCHEMA, rows, parents, _origin_cache_control(hint))
+        _emit_fanout(out, params.output_schema, rows, parents, _origin_cache_control(hint))
 
 
 @dataclass(slots=True, frozen=True, kw_only=True)
@@ -315,6 +374,7 @@ class MarketFunction(RowTransformFunction[TickerArgs]):
         description = "One Kalshi market by ticker"
         categories = ["market-data", "blended"]
         required_secrets = [SecretLookupEntry(secret_type=auth.SECRET_TYPE)]
+        projection_pushdown = True
         tags = docs(
             category="markets",
             result_schema=MARKET_SCHEMA,
@@ -384,7 +444,7 @@ class MarketFunction(RowTransformFunction[TickerArgs]):
         # strict identity map; provenance is carried for the same reason.
         _emit_fanout(
             out,
-            cls.FIXED_SCHEMA,
+            params.output_schema,
             rows,
             parents,
             _opt_in_cache_control(params.args.cache_ttl, per_value=True),
@@ -416,6 +476,7 @@ class OrderbookFunction(RowTransformFunction[OrderbookArgs]):
         description = "Kalshi order book flattened to one row per side and price level"
         categories = ["market-data", "blended"]
         required_secrets = [SecretLookupEntry(secret_type=auth.SECRET_TYPE)]
+        projection_pushdown = True
         tags = docs(
             category="market-depth",
             result_schema=ORDERBOOK_SCHEMA,
@@ -503,7 +564,7 @@ class OrderbookFunction(RowTransformFunction[OrderbookArgs]):
                 parents.extend([index] * len(levels))
         _emit_fanout(
             out,
-            cls.FIXED_SCHEMA,
+            params.output_schema,
             rows,
             parents,
             _opt_in_cache_control(params.args.cache_ttl, per_value=True),
@@ -558,6 +619,7 @@ class CandlesticksFunction(RowTransformFunction[CandlestickArgs]):
         description = "Kalshi OHLC candlesticks for a market (series and market ticker)"
         categories = ["market-data", "blended"]
         required_secrets = [SecretLookupEntry(secret_type=auth.SECRET_TYPE)]
+        projection_pushdown = True
         tags = docs(
             category="history",
             result_schema=CANDLESTICK_SCHEMA,
@@ -652,7 +714,7 @@ class CandlesticksFunction(RowTransformFunction[CandlestickArgs]):
                 parents.extend([index] * len(flat))
         _emit_fanout(
             out,
-            cls.FIXED_SCHEMA,
+            params.output_schema,
             rows,
             parents,
             _candlestick_cache_control(end_ts=end_ts, period_interval=params.args.period_interval, now=now),
@@ -695,6 +757,7 @@ class TradesFunction(RowTransformFunction[TradesArgs]):
         description = "Executed trades for a Kalshi market (the public tape)"
         categories = ["market-data", "blended"]
         required_secrets = [SecretLookupEntry(secret_type=auth.SECRET_TYPE)]
+        projection_pushdown = True
         tags = docs(
             category="history",
             result_schema=TRADE_SCHEMA,
@@ -779,7 +842,7 @@ class TradesFunction(RowTransformFunction[TradesArgs]):
                 parents.extend([index] * len(found))
         _emit_fanout(
             out,
-            cls.FIXED_SCHEMA,
+            params.output_schema,
             rows,
             parents,
             _origin_cache_control(hint) or _opt_in_cache_control(params.args.cache_ttl, per_value=True),
@@ -813,6 +876,7 @@ class EventsFunction(RowTransformFunction[EventsArgs]):
         description = "Events under a Kalshi series (series_ticker required)"
         categories = ["market-data", "blended"]
         required_secrets = [SecretLookupEntry(secret_type=auth.SECRET_TYPE)]
+        projection_pushdown = True
         tags = docs(
             category="reference",
             result_schema=EVENT_SCHEMA,
@@ -900,7 +964,7 @@ class EventsFunction(RowTransformFunction[EventsArgs]):
                 parents.extend([index] * len(found))
         _emit_fanout(
             out,
-            cls.FIXED_SCHEMA,
+            params.output_schema,
             rows,
             parents,
             _origin_cache_control(hint) or _opt_in_cache_control(params.args.cache_ttl, per_value=True),

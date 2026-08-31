@@ -221,6 +221,56 @@ class TestEvents:
         assert set(batch.column("series_ticker").to_pylist()) == {SERIES}
 
 
+class TestStatusPushdown:
+    """The status mapping that filter pushdown relies on must stay exact.
+
+    `WHERE status = 'active'` is rewritten to `status => 'open'` before the
+    request. If that stops being an exact correspondence the rewrite starts
+    dropping rows, and DuckDB cannot recover what was never fetched — so the
+    mapping is re-checked against a complete event rather than trusted.
+    """
+
+    def test_each_mapped_pair_is_exact(self) -> None:
+        from vgi_kalshi.markets import _STATUS_COLUMN_TO_FILTER
+
+        events = api.events(SERIES, limit=1)
+        if not events:
+            pytest.skip(f"no events in {SERIES} right now")
+        event = events[0]["event_ticker"]
+        with api.open_client() as client:
+            # One event is small enough to fetch whole, so neither side is capped.
+            every = api.markets(SERIES, event_ticker=event, client=client)
+            for column_value, filter_value in _STATUS_COLUMN_TO_FILTER.items():
+                expected = {m["ticker"] for m in every if m["status"] == column_value}
+                if not expected:
+                    continue
+                got = {
+                    m["ticker"]
+                    for m in api.markets(SERIES, event_ticker=event, status=filter_value, client=client)
+                }
+                assert expected <= got, (
+                    f"status => {filter_value!r} drops markets reading {column_value!r}: "
+                    f"{sorted(expected - got)}"
+                )
+
+
+class TestExchangeStatus:
+    def test_reports_a_status_per_venue(self) -> None:
+        from vgi_kalshi.schemas import EXCHANGE_STATUS_SCHEMA, flatten_exchange_status
+
+        rows = flatten_exchange_status(api.exchange_status())
+        batch = batch_from_rows(rows, EXCHANGE_STATUS_SCHEMA)
+        assert batch.num_rows > 0
+        assert all(isinstance(v, bool) for v in batch.column("exchange_active").to_pylist())
+
+    def test_declares_the_shortest_ttl_in_the_api(self) -> None:
+        """The cache policy is forwarded, so it is worth knowing it still exists."""
+        hint = api.CacheHint()
+        api.exchange_status(hint=hint)
+        assert hint.cacheable
+        assert hint.max_age == 1
+
+
 class TestSeries:
     def test_whole_catalog_is_one_response(self) -> None:
         batch = batch_from_rows(api.series_list(), SERIES_SCHEMA)

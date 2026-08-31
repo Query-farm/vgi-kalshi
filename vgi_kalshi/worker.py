@@ -30,8 +30,8 @@ from vgi.catalog.descriptors import Table
 from vgi_kalshi import __version__, auth
 from vgi_kalshi.markets import MARKET_FUNCTIONS
 from vgi_kalshi.meta import column_comments, docs, examples, keywords
-from vgi_kalshi.reference import REFERENCE_FUNCTIONS, AllSeriesFunction
-from vgi_kalshi.schemas import SERIES_SCHEMA
+from vgi_kalshi.reference import REFERENCE_FUNCTIONS, AllSeriesFunction, ExchangeStatusFunction
+from vgi_kalshi.schemas import EXCHANGE_STATUS_SCHEMA, SERIES_SCHEMA
 
 IMPLEMENTATION_VERSION = __version__
 DATA_VERSION_SPEC = f"=={__version__}"
@@ -243,6 +243,25 @@ _AGENT_TEST_TASKS = json.dumps(
             ),
         },
         {
+            "name": "is_the_market_open",
+            "prompt": (
+                "Is Kalshi open for trading right now? If some venues are open and others are not, say which."
+            ),
+            "reference_sql": (
+                "SELECT description, exchange_active, trading_active "
+                "FROM kalshi.main.exchange_status ORDER BY exchange_index"
+            ),
+            "success_criteria": (
+                "Uses exchange_status (or the all_exchange_status function behind it) and "
+                "reports per-venue rather than treating the exchange as a single switch."
+            ),
+            "check_sql": (
+                "SELECT count(*) = (SELECT count(*) FROM kalshi.main.all_exchange_status()) "
+                "FROM kalshi.main.exchange_status"
+            ),
+            "unordered": True,
+        },
+        {
             "name": "book_depth",
             "prompt": (
                 "How much size is resting on each side of the book for any open market in the "
@@ -441,6 +460,45 @@ _SERIES_DOCS = docs(
     },
 )
 
+_EXCHANGE_STATUS_DOCS = docs(
+    category="reference",
+    llm=(
+        "Whether Kalshi is open for trading right now, one row per venue. Check this before "
+        "concluding that an empty order book or an unmoving price means anything — outside "
+        "trading hours it means the venue is closed. Kalshi runs several venues that open and "
+        "close independently, so the exchange-wide flag alone is not the answer."
+    ),
+    md=(
+        "One row per trading venue, with the exchange-wide flags repeated on each.\n\n"
+        "### Read the venue, not just the exchange\n\n"
+        "Crypto trades around the clock while sports venues follow their seasons, so "
+        "`exchange_active` does not tell you whether the contract you care about is "
+        "tradeable. Match on `description`, or use the `*_overall` columns to ignore the "
+        "distinction deliberately.\n\n"
+        "### Freshness\n\n"
+        "The most volatile thing Kalshi publishes, and it says so: `max-age=1`, the shortest "
+        "TTL in the API. That directive is forwarded to the result cache rather than invented."
+    ),
+    example_queries=examples(
+        (
+            "Is the exchange open for trading right now?",
+            "SELECT description, exchange_active, trading_active "
+            "FROM kalshi.main.exchange_status ORDER BY exchange_index",
+        ),
+        (
+            "Venues that are up but not currently trading",
+            "SELECT description FROM kalshi.main.exchange_status "
+            "WHERE exchange_active AND NOT trading_active",
+        ),
+    ),
+    extra={
+        "provider": "kalshi",
+        "domain": "prediction-markets",
+        "vgi.title": "Exchange Trading Status",
+        "vgi.keywords": keywords("exchange", "status", "trading hours", "open", "halt", "venue"),
+    },
+)
+
 _KALSHI_CATALOG = Catalog(
     name="kalshi",
     default_schema="main",
@@ -461,6 +519,22 @@ _KALSHI_CATALOG = Catalog(
                     column_comments=column_comments(SERIES_SCHEMA),
                     primary_key=(("ticker",),),
                     not_null=("ticker",),
+                    # Inlined so the planner does not have to ask. The catalog
+                    # is one unpaginated response whose size moves slowly — it
+                    # was ~13,600 rows when this was measured — so an estimate
+                    # that is stale by a few hundred still beats no estimate.
+                    cardinality_estimate=13_600,
+                    statistics_cache_max_age_seconds=3_600,
+                ),
+                Table(
+                    name="exchange_status",
+                    function=ExchangeStatusFunction,
+                    comment="Whether the exchange, and each venue within it, is open for trading",
+                    tags=_EXCHANGE_STATUS_DOCS,
+                    column_comments=column_comments(EXCHANGE_STATUS_SCHEMA),
+                    primary_key=(("exchange_index",),),
+                    not_null=("exchange_index",),
+                    cardinality_estimate=4,
                 ),
             ],
         ),

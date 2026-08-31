@@ -293,6 +293,51 @@ EVENT_SCHEMA = pa.schema(
     ]
 )
 
+#: One row per exchange index. Kalshi runs several trading venues under one
+#: exchange (Default, Combos, Crypto, sports), and they open and close
+#: independently, so "is the exchange open" is a per-index question.
+EXCHANGE_STATUS_SCHEMA = pa.schema(
+    [
+        field(
+            "exchange_index",
+            pa.int64(),
+            "Kalshi's numeric id for this trading venue (0 = Default, 1 = Combos, "
+            "2 = Crypto, ...); a stable identifier, not a count or an ordering.",
+        ),
+        field("description", pa.string(), "Human label for the venue, e.g. 'Default', 'Crypto'."),
+        field("exchange_active", pa.bool_(), "Whether this venue is up at all."),
+        field("trading_active", pa.bool_(), "Whether orders can be placed on this venue right now."),
+        field(
+            "intra_exchange_transfers_active",
+            pa.bool_(),
+            "Whether positions can be transferred within this venue.",
+        ),
+        field(
+            "exchange_active_overall",
+            pa.bool_(),
+            "The exchange-wide flag, repeated on every row for a filter that ignores venues.",
+        ),
+        field(
+            "trading_active_overall",
+            pa.bool_(),
+            "The exchange-wide trading flag, repeated on every row.",
+        ),
+    ]
+)
+
+#: Descriptive metadata for one event: the sources it settles against and the
+#: images Kalshi shows for it. Separate from `events()` because it is a
+#: different endpoint and a different shape — one row per settlement source.
+EVENT_METADATA_SCHEMA = pa.schema(
+    [
+        field("event_ticker", pa.string(), "Event this metadata describes."),
+        field("settlement_source_name", pa.string(), "Name of a source the event settles against."),
+        field("settlement_source_url", pa.string(), "Link to that source."),
+        field("image_url", pa.string(), "Event image Kalshi displays."),
+        field("featured_image_url", pa.string(), "Larger featured image, when Kalshi has one."),
+    ]
+)
+
 SERIES_SCHEMA = pa.schema(
     [
         field(
@@ -367,3 +412,48 @@ def flatten_orderbook(ticker: str, book: dict[str, Any]) -> list[dict[str, Any]]
             count = level[1] if len(level) > 1 else None
             rows.append({"ticker": ticker, "side": side, "price_dollars": price, "count_fp": count})
     return rows
+
+
+def flatten_exchange_status(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    """Flatten the exchange status into one row per trading venue.
+
+    The payload carries exchange-wide flags alongside a list of per-index
+    statuses. The wide flags are repeated on every row so a query can ask
+    "is trading open" without knowing the venue layout.
+    """
+    overall = {
+        "exchange_active_overall": payload.get("exchange_active"),
+        "trading_active_overall": payload.get("trading_active"),
+    }
+    indexes = payload.get("exchange_index_statuses") or []
+    if not indexes:
+        # An exchange with no per-index breakdown still has an answer.
+        return [
+            {
+                **overall,
+                "exchange_active": payload.get("exchange_active"),
+                "trading_active": payload.get("trading_active"),
+                "intra_exchange_transfers_active": payload.get("intra_exchange_transfers_active"),
+            }
+        ]
+    return [{**index, **overall} for index in indexes]
+
+
+def flatten_event_metadata(event_ticker: str, payload: dict[str, Any]) -> list[dict[str, Any]]:
+    """One row per settlement source, carrying the event's images alongside.
+
+    An event with no declared sources still yields one row, so a lookup by
+    ticker always returns its images rather than nothing.
+    """
+    images = {
+        "event_ticker": event_ticker,
+        "image_url": payload.get("image_url"),
+        "featured_image_url": payload.get("featured_image_url"),
+    }
+    sources = payload.get("settlement_sources") or []
+    if not sources:
+        return [images]
+    return [
+        {**images, "settlement_source_name": s.get("name"), "settlement_source_url": s.get("url")}
+        for s in sources
+    ]

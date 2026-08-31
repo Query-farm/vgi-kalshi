@@ -538,6 +538,56 @@ def events(
     )
 
 
+def event(
+    event_ticker: str,
+    *,
+    client: httpx.Client | None = None,
+    hint: CacheHint | None = None,
+    credentials: Credentials | None = None,
+) -> dict[str, Any]:
+    """One event by ticker.
+
+    The response also carries the event's markets; only the event itself is
+    returned here, since ``markets(series, event_ticker => …)`` is the way to
+    ask for those and it paginates properly.
+    """
+    payload = _get(f"/events/{event_ticker}", client=client, hint=hint, credentials=credentials)
+    return payload.get("event") or {}
+
+
+def event_metadata(
+    event_ticker: str,
+    *,
+    client: httpx.Client | None = None,
+    hint: CacheHint | None = None,
+    credentials: Credentials | None = None,
+) -> dict[str, Any]:
+    """Descriptive metadata for one event: settlement sources and images.
+
+    Distinct from the ``settlement_sources`` column on :func:`events`, which is
+    the summary Kalshi inlines into the listing; this endpoint is where the
+    images live.
+    """
+    return _get(f"/events/{event_ticker}/metadata", client=client, hint=hint, credentials=credentials)
+
+
+def exchange_status(
+    *,
+    client: httpx.Client | None = None,
+    hint: CacheHint | None = None,
+    credentials: Credentials | None = None,
+) -> dict[str, Any]:
+    """Whether the exchange, and each venue within it, is open.
+
+    Kalshi runs several venues under one exchange — Default, Combos, Crypto,
+    sports — which open and close independently, so this is the difference
+    between "the exchange is up" and "the thing you want to trade is up".
+    Declares ``Cache-Control: public, max-age=1``, the shortest TTL Kalshi
+    publishes anywhere.
+    """
+    return _get("/exchange/status", client=client, hint=hint, credentials=credentials)
+
+
 def series_list(
     category: str | None = None,
     *,
