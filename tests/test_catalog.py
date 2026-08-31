@@ -283,17 +283,19 @@ class TestNoDeadApiSurface:
     def test_every_endpoint_wrapper_is_reachable(self) -> None:
         api_source = (PACKAGE / "kalshi_api.py").read_text()
         surface = "".join((PACKAGE / name).read_text() for name in self.SURFACE)
-        tests = "".join(path.read_text() for path in PACKAGE.parent.glob("tests/test_*.py"))
-        # `base_url`/`open_client` are plumbing, not endpoints.
-        candidates = self._public_api_functions() - {"base_url", "open_client"}
+        # Every test file, conftest included — a fixture is a real caller.
+        tests = "".join(path.read_text() for path in PACKAGE.parent.glob("tests/*.py"))
+        # `base_url` is plumbing, not an endpoint.
+        candidates = self._public_api_functions() - {"base_url"}
         orphaned = [
             name
             for name in sorted(candidates)
             if f"api.{name}(" not in surface
             and f"api.{name}(" not in tests
             and f"kalshi_api.{name}(" not in tests
-            and f"\n    return {name}(" not in api_source
-            and f" {name}(" not in api_source.split(f"def {name}(")[0]
+            # Called from inside kalshi_api itself: the definition contributes
+            # one occurrence, so more than one means a real call site.
+            and api_source.count(f"{name}(") <= 1
         ]
         assert orphaned == [], (
             f"kalshi_api functions reachable from neither SQL nor a test: {orphaned}. "

@@ -19,7 +19,22 @@ from typing import Any
 
 import pytest
 
+from vgi_kalshi import kalshi_api
 from vgi_kalshi.kalshi_api import KalshiError
+
+
+@pytest.fixture(autouse=True)
+def _hermetic_connection_pool() -> Generator[None, None, None]:
+    """Give every test a clean connection pool.
+
+    `kalshi_api` keeps a process-wide client so a paged scan does not pay a TLS
+    handshake per page. That is global state: without resetting it, a client
+    built against one test's mock transport would serve the next test, and the
+    order tests happen to run in would decide whether they pass.
+    """
+    kalshi_api.reset_shared_client()
+    yield
+    kalshi_api.reset_shared_client()
 
 
 @pytest.hookimpl(hookwrapper=True)
