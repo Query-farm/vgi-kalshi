@@ -588,6 +588,111 @@ def exchange_status(
     return _get("/exchange/status", client=client, hint=hint, credentials=credentials)
 
 
+# --------------------------------------------------------------------------
+# The historical archive
+# --------------------------------------------------------------------------
+#
+# Kalshi moves settled markets, and the trades and candles under them, out of
+# the live endpoints and into a separate archive. A query for last month's
+# trades against the live tape does not error — it returns nothing — so the
+# cutoff below is what tells a caller which side of the boundary to ask.
+
+
+def historical_cutoff(
+    *,
+    client: httpx.Client | None = None,
+    hint: CacheHint | None = None,
+    credentials: Credentials | None = None,
+) -> dict[str, Any]:
+    """The boundary between the live endpoints and the archive.
+
+    Four timestamps, one per data kind. Anything older than the relevant one has
+    been archived and is invisible to the live endpoints; anything newer is not
+    in the archive yet. This is the only way to know which to query, and getting
+    it wrong is silent — the wrong endpoint returns an empty result, not an
+    error.
+    """
+    return _get("/historical/cutoff", client=client, hint=hint, credentials=credentials)
+
+
+def historical_markets(
+    *,
+    series_ticker: str | None = None,
+    event_ticker: str | None = None,
+    tickers: Sequence[str] | None = None,
+    limit: int | None = None,
+    client: httpx.Client | None = None,
+    hint: CacheHint | None = None,
+    credentials: Credentials | None = None,
+) -> list[dict[str, Any]]:
+    """Archived markets — settled, and moved out of the live ``/markets``.
+
+    Same shape as a live market plus ``settlement_value_dollars``, which is what
+    the contract actually paid out.
+    """
+    return _paged(
+        "/historical/markets",
+        "markets",
+        {
+            "series_ticker": series_ticker,
+            "event_ticker": event_ticker,
+            "tickers": ",".join(tickers) if tickers else None,
+        },
+        limit=limit,
+        client=client,
+        hint=hint,
+        credentials=credentials,
+    )
+
+
+def historical_trades(
+    ticker: str | None = None,
+    *,
+    min_ts: int | None = None,
+    max_ts: int | None = None,
+    limit: int | None = None,
+    client: httpx.Client | None = None,
+    hint: CacheHint | None = None,
+    credentials: Credentials | None = None,
+) -> list[dict[str, Any]]:
+    """The archived trade tape, in the same shape as the live one."""
+    return _paged(
+        "/historical/trades",
+        "trades",
+        {"ticker": ticker, "min_ts": min_ts, "max_ts": max_ts},
+        limit=limit,
+        client=client,
+        hint=hint,
+        credentials=credentials,
+    )
+
+
+def historical_candlesticks(
+    ticker: str,
+    *,
+    period_interval: int,
+    start_ts: int,
+    end_ts: int,
+    client: httpx.Client | None = None,
+    hint: CacheHint | None = None,
+    credentials: Credentials | None = None,
+) -> list[dict[str, Any]]:
+    """Archived candlesticks for one market.
+
+    Note the path is ``/historical/markets/{ticker}/candlesticks`` — keyed on the
+    market alone, unlike the live per-market endpoint, which is scoped to the
+    series. There is no batched form of this one.
+    """
+    payload = _get(
+        f"/historical/markets/{ticker}/candlesticks",
+        {"period_interval": period_interval, "start_ts": start_ts, "end_ts": end_ts},
+        client=client,
+        hint=hint,
+        credentials=credentials,
+    )
+    return payload.get("candlesticks") or []
+
+
 def series_list(
     category: str | None = None,
     *,

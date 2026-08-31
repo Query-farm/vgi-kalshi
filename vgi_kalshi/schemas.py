@@ -457,3 +457,46 @@ def flatten_event_metadata(event_ticker: str, payload: dict[str, Any]) -> list[d
         {**images, "settlement_source_name": s.get("name"), "settlement_source_url": s.get("url")}
         for s in sources
     ]
+
+
+#: Archived markets carry everything a live market does, plus what the contract
+#: actually paid out. Derived from MARKET_SCHEMA rather than restated, so a
+#: column documented once stays documented in both.
+HISTORICAL_MARKET_SCHEMA = pa.schema(
+    [
+        *MARKET_SCHEMA,
+        field(
+            "settlement_value_dollars",
+            DOLLARS,
+            "What one contract paid at settlement, in dollars (1 for the winning side, 0 "
+            "for the losing one; a scalar market can settle in between).",
+        ),
+    ]
+)
+
+#: The live/archive boundary, one row. Four timestamps rather than one because
+#: Kalshi archives each kind of data on its own schedule.
+HISTORICAL_CUTOFF_SCHEMA = pa.schema(
+    [
+        field(
+            "market_settled_ts",
+            TIMESTAMP,
+            "Markets that settled before this are in the archive, not in markets().",
+        ),
+        field(
+            "trades_created_ts",
+            TIMESTAMP,
+            "Trades executed before this are in the archive, not in trades().",
+        ),
+        field(
+            "orders_updated_ts",
+            TIMESTAMP,
+            "Order archive boundary. Informational here: this worker exposes no order data.",
+        ),
+        field(
+            "market_positions_last_updated_ts",
+            TIMESTAMP,
+            "Position archive boundary. Informational here: this worker exposes no positions.",
+        ),
+    ]
+)

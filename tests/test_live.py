@@ -11,6 +11,7 @@ so anything checking a specific price would be flaky by construction.
 from __future__ import annotations
 
 import time
+from datetime import UTC, datetime
 
 import httpx
 import pyarrow as pa
@@ -276,6 +277,69 @@ class TestSeries:
         batch = batch_from_rows(api.series_list(), SERIES_SCHEMA)
         assert batch.num_rows > 1000
         assert batch.schema == SERIES_SCHEMA
+
+
+class TestHistoricalArchive:
+    """The archive, and the boundary that says when to use it.
+
+    The failure this guards is silent by construction: asking a live function
+    for archived data returns no rows rather than an error, which reads exactly
+    like a market that never traded.
+    """
+
+    def test_cutoff_reports_a_real_boundary(self) -> None:
+        from vgi_kalshi.schemas import HISTORICAL_CUTOFF_SCHEMA, to_timestamp
+
+        cutoff = api.historical_cutoff()
+        batch = batch_from_rows([cutoff], HISTORICAL_CUTOFF_SCHEMA)
+        assert batch.schema == HISTORICAL_CUTOFF_SCHEMA
+        settled = to_timestamp(cutoff["market_settled_ts"])
+        assert settled is not None
+        assert settled < datetime.now(UTC), "the archive boundary is in the future"
+
+    def test_archived_markets_carry_a_settlement_value(self) -> None:
+        from vgi_kalshi.schemas import HISTORICAL_MARKET_SCHEMA
+
+        rows = api.historical_markets(series_ticker=SERIES, limit=5)
+        if not rows:
+            pytest.skip(f"nothing archived for {SERIES} yet")
+        batch = batch_from_rows(rows, HISTORICAL_MARKET_SCHEMA)
+        assert batch.schema == HISTORICAL_MARKET_SCHEMA
+        assert batch.num_rows > 0
+        assert any(v is not None for v in batch.column("settlement_value_dollars").to_pylist())
+
+    def test_archived_markets_are_past_the_cutoff(self) -> None:
+        """The two halves must not overlap, or a UNION across them double-counts."""
+        from vgi_kalshi.schemas import to_timestamp
+
+        boundary = to_timestamp(api.historical_cutoff()["market_settled_ts"])
+        rows = api.historical_markets(series_ticker=SERIES, limit=5)
+        if not rows or boundary is None:
+            pytest.skip(f"nothing archived for {SERIES} yet")
+        closed = [to_timestamp(r.get("close_time")) for r in rows]
+        assert all(c is None or c <= boundary for c in closed)
+
+    def test_archived_trades_match_the_live_tape_shape(self) -> None:
+        """Identical columns is what lets a query UNION ALL across the boundary."""
+        rows = api.historical_trades(limit=5)
+        if not rows:
+            pytest.skip("no archived trades right now")
+        batch = batch_from_rows(rows, TRADE_SCHEMA)
+        assert batch.schema == TRADE_SCHEMA
+        assert batch.num_rows > 0
+
+    def test_archived_candlesticks_are_keyed_on_the_market_alone(self) -> None:
+        """No series in the path, unlike the live endpoint — that is the whole difference."""
+        markets = api.historical_markets(series_ticker=SERIES, limit=1)
+        if not markets:
+            pytest.skip(f"nothing archived for {SERIES} yet")
+        ticker = markets[0]["ticker"]
+        closed = int(datetime.fromisoformat(markets[0]["close_time"].replace("Z", "+00:00")).timestamp())
+        candles = api.historical_candlesticks(
+            ticker, period_interval=60, start_ts=closed - 86_400, end_ts=closed
+        )
+        batch = batch_from_rows(flatten_candlesticks(ticker, candles), CANDLESTICK_SCHEMA)
+        assert batch.schema == CANDLESTICK_SCHEMA
 
 
 class TestPageLimits:

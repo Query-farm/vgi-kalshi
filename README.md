@@ -37,6 +37,8 @@ Names are bare — they are already qualified by the `kalshi` catalog.
 | Table | |
 |---|---|
 | `series` | Every series on the exchange (~13.6k rows, ~15.6 MB, one response) |
+| `exchange_status` | One row per trading venue: is it up, is it trading |
+| `historical_cutoff` | One row: where the live endpoints stop and the archive begins |
 
 `series` is a real catalog table, not a function: no required key and
 slow-changing. It is backed by the `all_series` function via
@@ -57,6 +59,27 @@ registration serves both a literal call and a correlated LATERAL:
 | `candlesticks(series_ticker, ticker)` | both | `period_interval`, `start_ts`, `end_ts` |
 | `trades(ticker)` | ticker | `min_ts`, `max_ts`, `max_rows`, `cache_ttl` |
 | `events(series_ticker)` | series_ticker | `status`, `cache_ttl` |
+| `historical_markets(series_ticker)` | series_ticker | `event_ticker` |
+| `historical_trades(ticker)` | ticker | `min_ts`, `max_ts`, `max_rows` |
+| `historical_candlesticks(ticker)` | ticker | `period_interval`, `start_ts`, `end_ts` |
+
+### The archive
+
+Kalshi moves settled markets, and the trades and candles beneath them, out of
+the live endpoints into a separate archive. **The live functions do not error
+for archived data — they return nothing**, which reads exactly like a market
+that never traded. `historical_cutoff` is the boundary, and it moves:
+
+```sql
+SELECT market_settled_ts, trades_created_ts FROM kalshi.historical_cutoff;
+```
+
+The historical functions mirror their live twins column for column, so a query
+crosses the boundary by changing only the function name, and the two halves
+`UNION ALL` without reshaping. Two differences worth knowing:
+`historical_markets` adds `settlement_value_dollars` (what the contract
+actually paid), and `historical_candlesticks` takes only a market ticker —
+the archive is not scoped by series, unlike the live endpoint.
 
 ```sql
 -- Order books for every open market in a series, in one query
@@ -289,7 +312,7 @@ by [vgi-lint](https://github.com/Query-farm/vgi-lint-check):
 
 ```bash
 vgi-lint lint                     # config lives in vgi-lint.toml
-vgi-lint lint --audit-waivers     # prove the one waiver still buys something
+vgi-lint lint --audit-waivers     # prove both waivers still buy something
 ```
 
 Column documentation has a single source: `vgi_kalshi/schemas.py` attaches a
@@ -299,16 +322,18 @@ schema. A column documented once therefore shows up in `DESCRIBE`, in
 `duckdb_columns()`, and in the function's `vgi.result_columns_schema` — and
 cannot drift between them.
 
-One rule is waived, in `vgi-lint.toml`: VGI311 asks that a parameterless table
-function be exposed as a table, which `all_series` already is — as `series`. The
-rule matches on name, and the names differ deliberately, because a function and a
-table cannot share one in a schema.
+Two rules are waived, in `vgi-lint.toml`, each with a recorded kind and reason
+that `--audit-waivers` re-checks. VGI311 asks that a parameterless scan be
+exposed as a table, which all three of ours are — the rule matches on name, and
+the names differ deliberately because a function and a table cannot share one in
+a schema. VGI807 asks `historical_cutoff` for a primary key, which a one-row
+snapshot of a moving boundary has no honest answer to.
 
 ## Tests
 
 ```bash
-pytest              # 101 offline tests
-pytest -m live      # 18 tests against the public API
+pytest              # 139 offline tests
+pytest -m live      # 29 tests against the public API
 ```
 
 `tests/test_catalog.py` asserts the metadata the linter reads: every shipped

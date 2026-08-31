@@ -2,8 +2,9 @@
 #
 #   vgi-lint lint --audit-waivers
 #
-# runs the rules the waiver below silences and fails if it has stopped buying
-# anything — a waiver that suppresses nothing is a standing claim nobody revisits.
+# re-runs the rules these waivers silence and fails if either has stopped buying
+# anything — a waiver that suppresses nothing is a standing claim nobody
+# revisits, and it hides the moment the rule starts applying.
 
 location = "uv run kalshi_worker.py"
 select = ["ALL"]
@@ -11,10 +12,20 @@ fail_on = "error"
 
 ignore = [
   { code = "VGI311", kind = "tooling-bug", reason = """\
-`all_series` IS exposed as a table — `kalshi.main.series` is a real catalog table \
-backed by it (Table(name="series", function=AllSeriesFunction)). The rule looks for \
-a table whose name matches the function's, so it cannot see the link. The names \
-differ deliberately: a function and a table cannot share one name in a schema, so \
-the scan is `all_series` and the table consumers actually use is `series`.\
+Every parameterless scan here IS exposed as a table: all_series backs `series`, \
+all_exchange_status backs `exchange_status`, and all_historical_cutoff backs \
+`historical_cutoff`. The rule looks for a table whose name matches the \
+function's, so it cannot see the link. The names differ deliberately — a \
+function and a table cannot share one name in a schema, so the scan takes the \
+`all_` prefix and the table keeps the name consumers actually type.\
 """ },
 ]
+
+[per-object]
+# A one-row snapshot of a moving boundary has no row identity to declare. The
+# table already says so structurally with cardinality_estimate = cardinality_max
+# = 1; a primary key on one of its timestamps would assert something false —
+# that the timestamp identifies the row, rather than being its entire content.
+"kalshi.main.historical_cutoff" = { ignore = [
+  { code = "VGI807", kind = "domain-exemption", reason = "single-row snapshot; the row has no identity beyond its own contents" },
+] }

@@ -28,16 +28,17 @@ from vgi.catalog.catalog_interface import AttachOpaqueData, CatalogAttachResult,
 from vgi.catalog.descriptors import Table
 
 from vgi_kalshi import __version__, auth
+from vgi_kalshi.historical import HISTORICAL_FUNCTIONS, HistoricalCutoffFunction
 from vgi_kalshi.markets import MARKET_FUNCTIONS
 from vgi_kalshi.meta import column_comments, docs, examples, keywords
 from vgi_kalshi.reference import REFERENCE_FUNCTIONS, AllSeriesFunction, ExchangeStatusFunction
-from vgi_kalshi.schemas import EXCHANGE_STATUS_SCHEMA, SERIES_SCHEMA
+from vgi_kalshi.schemas import EXCHANGE_STATUS_SCHEMA, HISTORICAL_CUTOFF_SCHEMA, SERIES_SCHEMA
 
 IMPLEMENTATION_VERSION = __version__
 DATA_VERSION_SPEC = f"=={__version__}"
 SOURCE_URL = "https://github.com/Query-farm/vgi-kalshi"
 
-_FUNCTIONS = [*MARKET_FUNCTIONS, *REFERENCE_FUNCTIONS]
+_FUNCTIONS = [*MARKET_FUNCTIONS, *REFERENCE_FUNCTIONS, *HISTORICAL_FUNCTIONS]
 
 _EXAMPLE_QUERIES = examples(
     (
@@ -262,6 +263,63 @@ _AGENT_TEST_TASKS = json.dumps(
             "unordered": True,
         },
         {
+            "name": "which_side_of_the_archive",
+            "prompt": (
+                "Kalshi moves older data into a historical archive. As of now, how far back do "
+                "the live endpoints go before you have to use the historical ones?"
+            ),
+            "reference_sql": (
+                "SELECT market_settled_ts, trades_created_ts FROM kalshi.main.historical_cutoff"
+            ),
+            "check_sql": "SELECT count(*) = 1 FROM kalshi.main.all_historical_cutoff()",
+            "success_criteria": (
+                "Finds the cutoff table rather than guessing a date, and reports the timestamps "
+                "as the boundary between the live and historical functions."
+            ),
+        },
+        {
+            "name": "how_it_settled",
+            "prompt": (
+                "For the Kalshi series KXBTCD, find some markets that have already settled and "
+                "say what each one paid out."
+            ),
+            "reference_sql": (
+                "SELECT ticker, result, settlement_value_dollars "
+                "FROM kalshi.main.historical_markets('KXBTCD') "
+                "ORDER BY close_time DESC LIMIT 10"
+            ),
+            "success_criteria": (
+                "Uses historical_markets, not markets() — settled markets have been archived "
+                "out of the live endpoint, which returns nothing for them rather than erroring."
+            ),
+            "unordered": True,
+        },
+        {
+            "name": "price_before_settlement",
+            "prompt": (
+                "Take any settled market in the Kalshi series KXBTCD. How did its price move "
+                "over its final days, and what were the last trades on it?"
+            ),
+            "reference_sql": [
+                "SELECT c.end_period_ts, c.price_close_dollars FROM ("
+                "SELECT ticker FROM kalshi.main.historical_markets('KXBTCD') "
+                "ORDER BY close_time DESC LIMIT 1) m, "
+                "LATERAL kalshi.main.historical_candlesticks(m.ticker, period_interval => 1440) c "
+                "ORDER BY c.end_period_ts",
+                "SELECT t.created_time, t.yes_price_dollars FROM ("
+                "SELECT ticker FROM kalshi.main.historical_markets('KXBTCD') "
+                "ORDER BY close_time DESC LIMIT 1) m, "
+                "LATERAL kalshi.main.historical_trades(m.ticker, max_rows => 20) t "
+                "ORDER BY t.created_time DESC",
+            ],
+            "success_criteria": (
+                "Uses the historical candlestick and trade functions for an archived market, "
+                "and passes only the market ticker to historical_candlesticks — unlike the live "
+                "one, it is not scoped by series."
+            ),
+            "unordered": True,
+        },
+        {
             "name": "book_depth",
             "prompt": (
                 "How much size is resting on each side of the book for any open market in the "
@@ -303,6 +361,15 @@ _CATEGORIES = json.dumps(
             "title": "Price History",
             "description": "How a contract traded over time: OHLC bars and the raw trade tape.",
             "keywords": ["candlesticks", "ohlc", "trades", "tape", "history"],
+        },
+        {
+            "name": "historical",
+            "title": "Settled & Archived",
+            "description": (
+                "Markets that have resolved, and the trades and candles under them, after "
+                "Kalshi moves them out of the live endpoints."
+            ),
+            "keywords": ["historical", "archive", "settled", "backtest", "resolved"],
         },
     ]
 )
@@ -499,6 +566,46 @@ _EXCHANGE_STATUS_DOCS = docs(
     },
 )
 
+_CUTOFF_DOCS = docs(
+    category="historical",
+    llm=(
+        "One row saying where Kalshi's live endpoints stop and its archive begins. Read it "
+        "before querying a date range: the live functions return no rows — not an error — for "
+        "anything older, so an empty result is otherwise indistinguishable from a market that "
+        "never traded. Compare a date against `market_settled_ts` for markets and candles, or "
+        "`trades_created_ts` for the tape, and pick the live or the historical function "
+        "accordingly."
+    ),
+    md=(
+        "One row, four timestamps, because Kalshi archives each kind of data on its own "
+        "schedule.\n\n"
+        "### Why this is a table and not a note in the docs\n\n"
+        "The boundary moves. Hardcoding a date works until it quietly does not, and the "
+        "failure mode is an empty result rather than an error — which reads like an answer.\n\n"
+        "### Which column governs what\n\n"
+        "`market_settled_ts` covers markets and their candles; `trades_created_ts` covers the "
+        "trade tape. The remaining two describe order and position archives, which this "
+        "read-only worker does not expose; they are reported because Kalshi reports them."
+    ),
+    example_queries=examples(
+        (
+            "Where does the archive begin?",
+            "SELECT market_settled_ts, trades_created_ts FROM kalshi.main.historical_cutoff",
+        ),
+        (
+            "Decide which functions serve a given date",
+            "SELECT DATE '2026-08-01' >= market_settled_ts AS use_live_functions "
+            "FROM kalshi.main.historical_cutoff",
+        ),
+    ),
+    extra={
+        "provider": "kalshi",
+        "domain": "prediction-markets",
+        "vgi.title": "Live / Archive Boundary",
+        "vgi.keywords": keywords("historical", "archive", "cutoff", "boundary", "settled"),
+    },
+)
+
 _KALSHI_CATALOG = Catalog(
     name="kalshi",
     default_schema="main",
@@ -535,6 +642,15 @@ _KALSHI_CATALOG = Catalog(
                     primary_key=(("exchange_index",),),
                     not_null=("exchange_index",),
                     cardinality_estimate=4,
+                ),
+                Table(
+                    name="historical_cutoff",
+                    function=HistoricalCutoffFunction,
+                    comment="Where Kalshi's live endpoints stop and its historical archive begins",
+                    tags=_CUTOFF_DOCS,
+                    column_comments=column_comments(HISTORICAL_CUTOFF_SCHEMA),
+                    cardinality_estimate=1,
+                    cardinality_max=1,
                 ),
             ],
         ),
