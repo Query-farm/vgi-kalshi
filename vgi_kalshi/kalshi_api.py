@@ -537,9 +537,11 @@ def orderbooks(
             credentials=credentials,
         )
         for entry in payload.get("orderbooks") or []:
+            if not isinstance(entry, dict):
+                continue
             ticker = entry.get("ticker")
             if ticker:
-                books[ticker] = entry.get("orderbook_fp") or {}
+                books[str(ticker)] = entry.get("orderbook_fp") or {}
     return books
 
 
@@ -592,9 +594,13 @@ def batch_candlesticks(
             credentials=credentials,
         )
         for entry in payload.get("markets") or []:
+            # Defensive about the shape, not just the values: a malformed page
+            # should cost that page's rows, not raise out of the whole scan.
+            if not isinstance(entry, dict):
+                continue
             ticker = entry.get("market_ticker")
             if ticker:
-                out[ticker] = entry.get("candlesticks") or []
+                out[str(ticker)] = entry.get("candlesticks") or []
     return out
 
 

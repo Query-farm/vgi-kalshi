@@ -445,7 +445,7 @@ of a row, and a shipped example that could not bind — none of which any of the
 ## Tests
 
 ```bash
-pytest              # 212 offline tests
+pytest              # 223 offline tests
 pytest -m live      # 31 tests against the public API
 ```
 

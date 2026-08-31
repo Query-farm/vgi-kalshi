@@ -169,3 +169,43 @@ class TestDepthCap:
     @pytest.mark.parametrize("depth", [10, 100])
     def test_a_depth_beyond_the_book_keeps_everything(self, depth: int) -> None:
         assert len(_cap_depth(self.LEVELS, depth)) == len(self.LEVELS)
+
+
+class TestMalformedBatchPayloads:
+    """A malformed page costs that page's rows, not the whole scan.
+
+    The batch parsers indexed into every entry assuming a dict. A page whose
+    `markets` was a string — a CDN or gateway rewriting the body, say — raised
+    `AttributeError: 'str' object has no attribute 'get'` out of the middle of a
+    scan, which is neither actionable nor recoverable.
+    """
+
+    PAYLOADS = [
+        {},
+        {"markets": None, "orderbooks": None},
+        {"markets": "string", "orderbooks": "string"},
+        {"markets": ["str", 3, None], "orderbooks": ["str", 3, None]},
+        {"markets": [{"no_ticker": 1}], "orderbooks": [{"ticker": None}]},
+    ]
+
+    @pytest.mark.parametrize("payload", PAYLOADS)
+    def test_orderbooks_degrades_to_no_rows(self, payload: dict) -> None:
+        client = _client(lambda request: httpx.Response(200, json=payload))
+        assert api.orderbooks(["A"], client=client) == {}
+
+    @pytest.mark.parametrize("payload", PAYLOADS)
+    def test_batch_candlesticks_degrades_to_no_rows(self, payload: dict) -> None:
+        client = _client(lambda request: httpx.Response(200, json=payload))
+        got = api.batch_candlesticks(["A"], period_interval=60, start_ts=0, end_ts=3600, client=client)
+        assert got == {}
+
+    def test_a_good_entry_beside_a_bad_one_survives(self) -> None:
+        payload = {
+            "orderbooks": [
+                "garbage",
+                {"ticker": "GOOD", "orderbook_fp": {"yes_dollars": [["0.4000", "1.00"]]}},
+            ]
+        }
+        client = _client(lambda request: httpx.Response(200, json=payload))
+        books = api.orderbooks(["GOOD"], client=client)
+        assert set(books) == {"GOOD"}
