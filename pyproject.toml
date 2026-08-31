@@ -37,7 +37,16 @@ dependencies = [
 serve = ["vgi-python[http,oauth]>=0.31.0", "vgi-rpc[sentry]>=0.44.1"]
 
 [dependency-groups]
-dev = ["pytest>=8", "ruff>=0.15"]
+dev = [
+    "pytest>=8",
+    "ruff>=0.15",
+    # Drives a real ATTACH in tests/test_end_to_end.py. Every serious defect in
+    # this worker was found by executing SQL against it, not by a unit test.
+    "duckdb>=1.1",
+    # DuckDB materializes TIMESTAMP WITH TIME ZONE through pytz; without it a
+    # scan that returns one fails at fetch time, not at bind.
+    "pytz>=2024.1",
+]
 
 [project.urls]
 Homepage = "https://github.com/Query-farm/vgi-kalshi"

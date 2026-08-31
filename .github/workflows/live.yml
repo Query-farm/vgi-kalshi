@@ -28,8 +28,15 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --no-sources
-      - name: Live tests
-        run: uv run --no-sources pytest -q -m live -p no:randomly
+      - name: Live tests (API layer)
+        run: uv run --no-sources pytest -q -m live -p no:randomly --ignore=tests/test_end_to_end.py
+
+      # SQL executed against a real ATTACH. Separate because it is the tier that
+      # has caught what unit tests could not — a scan that wedged the client, a
+      # value no client could materialize, and filters that were not applied at
+      # all — and a failure here means something different from an API-layer one.
+      - name: End-to-end SQL
+        run: uv run --no-sources pytest -q -m live -p no:randomly tests/test_end_to_end.py
 
   behavioural:
     name: vgi-lint (executes every example)

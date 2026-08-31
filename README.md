@@ -431,8 +431,9 @@ resolves from PyPI (`UV_NO_SOURCES=1`), so it also proves the published
 dependencies are sufficient.
 
 `.github/workflows/live.yml` runs daily, never concurrently, and is the half
-that touches Kalshi: the live tests, then `vgi-lint --execute`, which runs every
-shipped example against the real API. That tier is deliberately not on push —
+that touches Kalshi: the API-layer live tests, then the end-to-end SQL suite
+against a real `ATTACH`, then `vgi-lint --execute`, which runs every shipped
+example against the real API. That tier is deliberately not on push —
 Kalshi rate-limits unauthenticated traffic to ~29 requests/second overall and
 ~4/s on `/events`, so two concurrent runs throttle each other into failures that
 say nothing about the code.
