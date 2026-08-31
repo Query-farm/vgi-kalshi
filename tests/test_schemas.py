@@ -318,3 +318,58 @@ class TestEveryConversionIsTotal:
 
         assert to_integer(True) is None
         assert to_integer(3) == 3
+
+
+class TestStrikeColumns:
+    """The structured form of a contract's threshold.
+
+    `subtitle` says "101.0 or above" in prose; these say it in numbers. Without
+    them a strike ladder cannot be analysed without regexing the ticker, which
+    is what prompted adding them — an implied-probability curve is the main
+    quantitative use of this data and it needs the strike as a value.
+    """
+
+    #: Kalshi's three shapes, and which bound each one sets.
+    SHAPES = [
+        ("greater", 90.99, None),
+        ("less", None, 71),
+        ("between", 70.0, 71.0),
+    ]
+
+    @pytest.mark.parametrize(("strike_type", "floor", "cap"), SHAPES)
+    def test_each_strike_shape_round_trips(
+        self, strike_type: str, floor: float | None, cap: float | None
+    ) -> None:
+        row = {"ticker": "T", "strike_type": strike_type, "floor_strike": floor, "cap_strike": cap}
+        batch = batch_from_rows([row], MARKET_SCHEMA)
+        assert batch.column("strike_type").to_pylist() == [strike_type]
+        assert batch.column("floor_strike").to_pylist() == [None if floor is None else Decimal(str(floor))]
+        assert batch.column("cap_strike").to_pylist() == [None if cap is None else Decimal(str(cap))]
+
+    def test_a_strike_is_exact_not_a_float(self) -> None:
+        """Kalshi sends these as JSON numbers; they must not stay floats.
+
+        A ladder is grouped and joined on its strike, and float equality on
+        87299.99 does not hold. Decimal is what makes `GROUP BY floor_strike`
+        and a cross-venue join on strike behave.
+        """
+        batch = batch_from_rows([{"floor_strike": 87299.99}], MARKET_SCHEMA)
+        value = batch.column("floor_strike").to_pylist()[0]
+        assert value == Decimal("87299.99")
+        assert isinstance(value, Decimal)
+
+    def test_an_integer_strike_is_kept_exactly(self) -> None:
+        """Not every series prices in dollars — EIA inventories strike on 435."""
+        batch = batch_from_rows([{"floor_strike": 435}], MARKET_SCHEMA)
+        assert batch.column("floor_strike").to_pylist() == [Decimal("435")]
+
+    def test_the_archive_carries_them_too(self) -> None:
+        """Settled ladders are the ones worth backtesting against."""
+        from vgi_kalshi.schemas import HISTORICAL_MARKET_SCHEMA
+
+        for column in ("strike_type", "floor_strike", "cap_strike"):
+            assert column in HISTORICAL_MARKET_SCHEMA.names
+
+    def test_a_junk_strike_is_null_not_fatal(self) -> None:
+        batch = batch_from_rows([{"floor_strike": "not-a-number"}], MARKET_SCHEMA)
+        assert batch.column("floor_strike").to_pylist() == [None]

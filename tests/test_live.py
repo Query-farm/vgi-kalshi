@@ -237,6 +237,56 @@ class TestEvents:
         assert set(batch.column("series_ticker").to_pylist()) == {SERIES}
 
 
+class TestStrikeLadder:
+    """The strike columns must actually arrive, and describe the same contract
+    the prose does.
+
+    A ladder whose strikes are NULL is indistinguishable from one that is not a
+    ladder, and the whole point of these columns is to make the implied
+    probability curve computable without parsing a ticker.
+    """
+
+    def test_a_price_ladder_reports_its_strikes(self) -> None:
+        rows = api.markets(SERIES, status="open", limit=25)
+        if not rows:
+            pytest.skip(f"no open markets in {SERIES} right now")
+        batch = batch_from_rows(rows, MARKET_SCHEMA)
+        kinds = set(batch.column("strike_type").to_pylist())
+        assert kinds <= {"greater", "less", "between", None}, kinds
+        floors = batch.column("floor_strike").to_pylist()
+        assert any(f is not None for f in floors), "a price ladder reported no strikes at all"
+
+    def test_the_bound_matches_the_strike_type(self) -> None:
+        """'greater' sets a floor, 'less' sets a cap, 'between' sets both."""
+        rows = api.markets(SERIES, status="open", limit=25)
+        if not rows:
+            pytest.skip(f"no open markets in {SERIES} right now")
+        for row in rows:
+            kind, floor, cap = row.get("strike_type"), row.get("floor_strike"), row.get("cap_strike")
+            if kind == "greater":
+                assert floor is not None, row.get("ticker")
+            elif kind == "less":
+                assert cap is not None, row.get("ticker")
+            elif kind == "between":
+                assert floor is not None and cap is not None, row.get("ticker")
+
+    def test_the_strike_agrees_with_the_ticker(self) -> None:
+        """The ticker encodes the strike too; the column must not contradict it."""
+        import re
+
+        rows = api.markets(SERIES, status="open", limit=25)
+        mismatches = []
+        for row in rows:
+            match = re.search(r"-T([0-9.]+)$", row.get("ticker") or "")
+            if (
+                match
+                and row.get("floor_strike") is not None
+                and abs(float(match.group(1)) - float(row["floor_strike"])) > 0.011
+            ):
+                mismatches.append((row["ticker"], row["floor_strike"]))
+        assert mismatches == [], f"column disagrees with the ticker: {mismatches[:3]}"
+
+
 class TestStatusPushdown:
     """The status mapping that filter pushdown relies on must stay exact.
 

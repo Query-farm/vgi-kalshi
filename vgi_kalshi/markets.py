@@ -269,7 +269,15 @@ MARKETS_DOCS = docs(
         "### Prices\n\n"
         "All `*_dollars` columns are dollars per contract between 0 and 1, carried as "
         "`DECIMAL(18,4)` — Kalshi sends them as exact fixed-point strings and rounding them "
-        "through a float would lose that."
+        "through a float would lose that.\n\n"
+        "### Reading a strike ladder\n\n"
+        "A series like `KXWTI` lists one market per threshold. `strike_type` says how to read "
+        "the bounds — `greater` sets `floor_strike`, `less` sets `cap_strike`, `between` sets "
+        "both — and the units are the series' own: dollars for a price market, thousands of "
+        "barrels for an inventory one. Do not parse the threshold out of the ticker or the "
+        "subtitle; `subtitle` is not always populated, and a ticker is not a contract.\n\n"
+        "Each row is `P(settles above floor_strike)`, so a ladder read in strike order is a "
+        "survival curve and the implied median is where it crosses 0.5."
     ),
     example_queries=examples(
         (
@@ -281,6 +289,13 @@ MARKETS_DOCS = docs(
         (
             "Ask Kalshi for only the open markets instead of filtering after the fact",
             "SELECT ticker, status FROM kalshi.main.markets('KXBTCD', status => 'open') ORDER BY ticker",
+        ),
+        (
+            "The implied probability curve for a price ladder, in strike order",
+            "SELECT floor_strike, (yes_bid_dollars + yes_ask_dollars) / 2 AS implied_probability "
+            "FROM kalshi.main.markets('KXWTI', status => 'open') "
+            "WHERE strike_type = 'greater' AND floor_strike IS NOT NULL "
+            "ORDER BY floor_strike",
         ),
     ),
 )

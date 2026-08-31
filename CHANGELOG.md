@@ -6,6 +6,11 @@ First release considered production-ready.
 
 ### Surface
 
+- `markets` and `historical_markets` expose `strike_type`, `floor_strike` and
+  `cap_strike`. Without them a strike ladder could only be analysed by regexing
+  the threshold out of the ticker — `subtitle` is not reliably populated — and
+  `between` ranges were not readable at all.
+
 - `series`, `exchange_status` and `historical_cutoff` catalog tables.
 - Live market data: `markets`, `market`, `orderbook`, `candlesticks`, `trades`,
   `events`, `event`, `event_metadata`.

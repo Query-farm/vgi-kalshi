@@ -27,6 +27,13 @@ DOLLARS = pa.decimal128(18, 4)
 #: Contract counts and volumes: 2dp.
 COUNT = pa.decimal128(18, 2)
 
+#: Strike levels. Unlike the ``*_dollars`` fields, Kalshi sends these as JSON
+#: *numbers* rather than fixed-point strings, and their unit is the series' own:
+#: dollars for a price market, thousands of barrels for an inventory one. Decimal
+#: rather than double so strikes group and join exactly — a ladder is something
+#: you aggregate over, and float equality on 87299.99 is a trap.
+STRIKE = pa.decimal128(18, 4)
+
 #: Kalshi timestamps are RFC 3339 with a trailing ``Z``.
 TIMESTAMP = pa.timestamp("us", tz="UTC")
 
@@ -218,6 +225,25 @@ MARKET_SCHEMA = pa.schema(
         field("subtitle", pa.string(), "Secondary heading distinguishing this strike within its event."),
         field("yes_sub_title", pa.string(), "Label describing what a YES holder is betting on."),
         field("no_sub_title", pa.string(), "Label describing what a NO holder is betting on."),
+        field(
+            "strike_type",
+            pa.string(),
+            "How to read the strike bounds: 'greater' (floor only), 'less' (cap only), "
+            "or 'between' (both). The machine-readable form of what `subtitle` says in prose.",
+        ),
+        field(
+            "floor_strike",
+            STRIKE,
+            "Lower bound of the range this contract settles YES on, exclusive. Set for "
+            "'greater' and 'between' strikes, NULL for 'less'. Units are the series' own — "
+            "dollars for a price market, thousands of barrels for an inventory one.",
+        ),
+        field(
+            "cap_strike",
+            STRIKE,
+            "Upper bound of the range this contract settles YES on. Set for 'less' and "
+            "'between' strikes, NULL for 'greater'. Same units as floor_strike.",
+        ),
         field(
             "status",
             pa.string(),
