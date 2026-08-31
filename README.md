@@ -1,9 +1,25 @@
-# vgi-kalshi
+<p align="center">
+  <a href="https://query.farm/vgi/">
+    <img src="https://raw.githubusercontent.com/Query-farm/vgi-kalshi/main/docs/vgi-logo.png" alt="Vector Gateway Interface logo" width="320">
+  </a>
+</p>
 
-A **read-only** [VGI](https://github.com/query-farm/vgi-python) worker exposing
-[Kalshi](https://kalshi.com) prediction-market data to DuckDB/SQL — markets,
-order books, candlesticks, trades, events, and the series catalog, as ordinary
-tables and table functions.
+<h1 align="center">vgi-kalshi</h1>
+
+<p align="center">
+  <a href="https://kalshi.com">Kalshi</a> prediction-market data as ordinary DuckDB tables — markets,<br>
+  order books, candlesticks, trades, events, and the series catalog.<br>
+  A <strong>read-only</strong> <a href="https://query.farm/vgi/">VGI</a> worker, built by <a href="https://query.farm">🚜 Query.Farm</a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/Query-farm/vgi-kalshi/actions/workflows/ci.yml"><img src="https://github.com/Query-farm/vgi-kalshi/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
+  <img src="https://img.shields.io/badge/python-3.13%2B-blue.svg" alt="Python 3.13+">
+  <a href="https://query.farm/vgi/"><img src="https://img.shields.io/badge/VGI-Vector%20Gateway%20Interface-2f7d32.svg" alt="VGI"></a>
+</p>
+
+---
 
 > **No credentials required.** Kalshi's entire market-data surface is public.
 > Only portfolio, order, and account endpoints need an API key with RSA-PSS
@@ -472,13 +488,13 @@ say nothing about the code.
 It earns the wait. The behavioural tier has caught, on separate runs, a scan
 that wedged the client uncancellably, a timestamp that crashed every consumer
 of a row, and a shipped example that could not bind — none of which any of the
-231 offline tests could see.
+234 offline tests could see.
 
 ## Tests
 
 ```bash
-pytest              # 231 offline tests
-pytest -m live      # 31 tests against the public API
+pytest              # 234 offline tests
+pytest -m live      # 49 tests against the public API
 ```
 
 `tests/test_catalog.py` asserts the metadata the linter reads: every shipped
@@ -492,3 +508,19 @@ were produced. `tests/test_packaging.py` checks the two entry-point scripts'
 PEP-723 headers still cover every runtime dependency — they resolve
 independently of `pyproject.toml`, so they drift silently and only an end-to-end
 `ATTACH` notices.
+
+## License
+
+Copyright © 2026 [Query Farm LLC](https://query.farm)
+
+Released under the **MIT License** — see [LICENSE](LICENSE).
+
+The market data this worker returns is Kalshi's, not covered by that license,
+and subject to [Kalshi's terms of use](https://kalshi.com/terms).
+
+---
+
+<p align="center">
+  Built with <a href="https://query.farm/vgi/">VGI — the Vector Gateway Interface</a><br>
+  by <a href="https://query.farm">🚜 Query.Farm</a>
+</p>

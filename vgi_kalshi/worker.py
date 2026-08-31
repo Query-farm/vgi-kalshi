@@ -423,8 +423,8 @@ _CATALOG_TAGS = {
     "vgi.source_url": SOURCE_URL,
     "vgi.author": "Query Farm LLC <hello@query.farm>",
     "vgi.copyright": (
-        "Worker (c) 2026 Query Farm LLC. Market data (c) Kalshi Inc., redistributed under "
-        "Kalshi's terms of use."
+        "Worker (c) 2026 Query Farm LLC - https://query.farm. Market data (c) Kalshi Inc., "
+        "redistributed under Kalshi's terms of use."
     ),
     "vgi.license": "MIT",
     "vgi.support_contact": "https://github.com/Query-farm/vgi-kalshi/issues",

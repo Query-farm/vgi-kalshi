@@ -51,7 +51,8 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/Query-farm/vgi-kalshi"
+Homepage = "https://query.farm"
+Documentation = "https://query.farm/vgi/"
 Repository = "https://github.com/Query-farm/vgi-kalshi"
 Issues = "https://github.com/Query-farm/vgi-kalshi/issues"
 
