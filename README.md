@@ -55,13 +55,30 @@ pip install vgi-kalshi
 ATTACH 'kalshi' (TYPE vgi, LOCATION 'vgi-kalshi');
 ```
 
-### Developing against a local vgi-python
+### Developing
 
-`[tool.uv.sources]` points `vgi-python` and `vgi-rpc` at sibling checkouts, so
-`uv sync` and `uv run vgi-kalshi` pick up local edits to the framework. The
-entry-point scripts deliberately do **not**: they resolve from PyPI so a clone
-works anywhere. Pass `--no-sources` to ignore the local checkouts entirely,
-which is what CI does — and what proves the published dependencies are enough.
+```bash
+git clone https://github.com/Query-farm/vgi-kalshi
+cd vgi-kalshi
+
+uv sync --all-extras     # Install dependencies
+uv run pytest            # 234 offline tests
+uv run ruff check .      # Lint
+```
+
+Dependencies resolve from PyPI, so a fresh clone works with no sibling
+checkouts. To develop against a local `vgi-python` or `vgi-rpc` instead, install
+them over the top — this keeps the path out of the committed manifest, where it
+would break the clone for everyone else:
+
+```bash
+uv pip install -e ../vgi-python -e ../vgi-rpc
+```
+
+The entry-point scripts (`kalshi_worker.py`, `serve.py`) always resolve from
+PyPI via their own PEP-723 headers, independently of `pyproject.toml`. That is
+deliberate — and it is why `tests/test_packaging.py` exists, since the two sets
+of pins drift silently otherwise.
 
 ## Surface
 

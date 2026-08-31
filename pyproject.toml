@@ -67,10 +67,6 @@ build-backend = "hatchling.build"
 [tool.hatch.version]
 path = "vgi_kalshi/__init__.py"
 
-[tool.uv.sources]
-vgi-python = { path = "../vgi-python" }
-vgi-rpc = { path = "../vgi-rpc" }
-
 [tool.ruff]
 line-length = 110
 target-version = "py313"

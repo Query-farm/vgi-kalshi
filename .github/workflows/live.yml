@@ -23,8 +23,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
       - run: uv sync --no-sources
@@ -44,8 +44,8 @@ jobs:
     timeout-minutes: 90
     needs: live
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
       - run: uv sync --no-sources
@@ -54,5 +54,5 @@ jobs:
       # offline test could see. Slow is the price of that.
       - name: vgi-lint (structural + behavioural)
         run: >
-          uvx --no-sources vgi-lint-check==0.81.1 lint "uv run --no-sources kalshi_worker.py"
+          uvx --no-sources --from vgi-lint-check==0.81.1 vgi-lint lint "uv run --no-sources kalshi_worker.py"
           --execute-concurrency 1 --no-check-links --audit-waivers --fail-on error

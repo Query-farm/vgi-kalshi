@@ -11,10 +11,11 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # Resolve from PyPI, never from the sibling checkouts `[tool.uv.sources]`
-  # points at for local development. This is also the check that the published
-  # dependencies are actually sufficient — the entry-point scripts carry their
-  # own PEP-723 headers, and those drifted from pyproject once already.
+  # pyproject deliberately carries no `[tool.uv.sources]`, so a fresh clone
+  # resolves from PyPI. This pins that shut: if a local path source is ever
+  # added, CI still proves the *published* dependencies are sufficient — the
+  # entry-point scripts carry their own PEP-723 headers, and those drifted
+  # from pyproject once already.
   UV_NO_SOURCES: "1"
 
 jobs:
@@ -22,8 +23,8 @@ jobs:
     name: Lint, types, offline tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
       - run: uv sync --no-sources --all-extras
@@ -42,8 +43,8 @@ jobs:
     name: Catalog metadata (vgi-lint, structural)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
       - run: uv sync --no-sources
@@ -52,5 +53,5 @@ jobs:
       # on a schedule instead — see live.yml.
       - name: vgi-lint (structural)
         run: >
-          uvx --no-sources vgi-lint-check==0.81.1 lint "uv run --no-sources kalshi_worker.py"
+          uvx --no-sources --from vgi-lint-check==0.81.1 vgi-lint lint "uv run --no-sources kalshi_worker.py"
           --no-execute --no-check-links --audit-waivers --fail-on warning
