@@ -38,7 +38,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Annotated, Any, ClassVar, cast
 
 import pyarrow as pa
-from vgi.arguments import Arg
+from vgi.arguments import Arg, SecretLookupEntry
 from vgi.cache_control import CacheControl
 from vgi.invocation import BindResponse
 from vgi.metadata import FunctionExample
@@ -46,6 +46,7 @@ from vgi.table_function import BindParams, ProcessParams
 from vgi.table_in_out_function import RowTransformFunction
 from vgi_rpc.rpc import OutputCollector
 
+from vgi_kalshi import auth
 from vgi_kalshi import kalshi_api as api
 from vgi_kalshi.kalshi_api import STALE_IF_ERROR, CacheHint
 from vgi_kalshi.meta import docs, examples
@@ -177,6 +178,7 @@ class MarketsFunction(RowTransformFunction[MarketsArgs]):
         name = "markets"
         description = "Markets under a Kalshi series (series_ticker required)"
         categories = ["market-data", "blended"]
+        required_secrets = [SecretLookupEntry(secret_type=auth.SECRET_TYPE)]
         tags = docs(
             category="markets",
             result_schema=MARKET_SCHEMA,
@@ -248,6 +250,7 @@ class MarketsFunction(RowTransformFunction[MarketsArgs]):
         rows: list[dict[str, Any]] = []
         parents: list[int] = []
         hint = CacheHint()
+        credentials = auth.for_call(params.secrets, params.attach_opaque_data)
         with api.open_client() as client:
             for index, ticker in enumerate(series):
                 if ticker is None:
@@ -258,6 +261,7 @@ class MarketsFunction(RowTransformFunction[MarketsArgs]):
                     status=params.args.status or None,
                     client=client,
                     hint=hint,
+                    credentials=credentials,
                 )
                 # Kalshi's market payload has no series_ticker, but this call
                 # knows it authoritatively: it is the input row. Stamping it on
@@ -290,6 +294,7 @@ class MarketFunction(RowTransformFunction[TickerArgs]):
         name = "market"
         description = "One Kalshi market by ticker"
         categories = ["market-data", "blended"]
+        required_secrets = [SecretLookupEntry(secret_type=auth.SECRET_TYPE)]
         tags = docs(
             category="markets",
             result_schema=MARKET_SCHEMA,
@@ -344,11 +349,12 @@ class MarketFunction(RowTransformFunction[TickerArgs]):
         tickers = batch.column("ticker").to_pylist()
         rows: list[dict[str, Any]] = []
         parents: list[int] = []
+        credentials = auth.for_call(params.secrets, params.attach_opaque_data)
         with api.open_client() as client:
             for index, ticker in enumerate(tickers):
                 if ticker is None:
                     continue
-                found = api.market(str(ticker), client=client)
+                found = api.market(str(ticker), client=client, credentials=credentials)
                 # No input series to stamp here, so fall back to the event
                 # ticker's prefix — the column means the same thing either way.
                 found.setdefault("series_ticker", series_of(found.get("event_ticker")))
@@ -387,6 +393,7 @@ class OrderbookFunction(RowTransformFunction[OrderbookArgs]):
         name = "orderbook"
         description = "Kalshi order book flattened to one row per side and price level"
         categories = ["market-data", "blended"]
+        required_secrets = [SecretLookupEntry(secret_type=auth.SECRET_TYPE)]
         tags = docs(
             category="market-depth",
             result_schema=ORDERBOOK_SCHEMA,
@@ -455,11 +462,14 @@ class OrderbookFunction(RowTransformFunction[OrderbookArgs]):
         tickers = batch.column("ticker").to_pylist()
         rows: list[dict[str, Any]] = []
         parents: list[int] = []
+        credentials = auth.for_call(params.secrets, params.attach_opaque_data)
         with api.open_client() as client:
             for index, ticker in enumerate(tickers):
                 if ticker is None:
                     continue
-                book = api.orderbook(str(ticker), depth=params.args.depth or None, client=client)
+                book = api.orderbook(
+                    str(ticker), depth=params.args.depth or None, client=client, credentials=credentials
+                )
                 levels = flatten_orderbook(str(ticker), book)
                 rows.extend(levels)
                 parents.extend([index] * len(levels))
@@ -516,6 +526,7 @@ class CandlesticksFunction(RowTransformFunction[CandlestickArgs]):
         name = "candlesticks"
         description = "Kalshi OHLC candlesticks for a market (series and market ticker)"
         categories = ["market-data", "blended"]
+        required_secrets = [SecretLookupEntry(secret_type=auth.SECRET_TYPE)]
         tags = docs(
             category="history",
             result_schema=CANDLESTICK_SCHEMA,
@@ -590,6 +601,7 @@ class CandlesticksFunction(RowTransformFunction[CandlestickArgs]):
         tickers = batch.column("ticker").to_pylist()
         rows: list[dict[str, Any]] = []
         parents: list[int] = []
+        credentials = auth.for_call(params.secrets, params.attach_opaque_data)
         with api.open_client() as client:
             for index, (series_ticker, ticker) in enumerate(zip(series, tickers, strict=True)):
                 if series_ticker is None or ticker is None:
@@ -601,6 +613,7 @@ class CandlesticksFunction(RowTransformFunction[CandlestickArgs]):
                     start_ts=start_ts,
                     end_ts=end_ts,
                     client=client,
+                    credentials=credentials,
                 )
                 flat = flatten_candlesticks(str(ticker), candles)
                 rows.extend(flat)
@@ -649,6 +662,7 @@ class TradesFunction(RowTransformFunction[TradesArgs]):
         name = "trades"
         description = "Executed trades for a Kalshi market (the public tape)"
         categories = ["market-data", "blended"]
+        required_secrets = [SecretLookupEntry(secret_type=auth.SECRET_TYPE)]
         tags = docs(
             category="history",
             result_schema=TRADE_SCHEMA,
@@ -715,6 +729,7 @@ class TradesFunction(RowTransformFunction[TradesArgs]):
         rows: list[dict[str, Any]] = []
         parents: list[int] = []
         hint = CacheHint()
+        credentials = auth.for_call(params.secrets, params.attach_opaque_data)
         with api.open_client() as client:
             for index, ticker in enumerate(tickers):
                 if ticker is None:
@@ -726,6 +741,7 @@ class TradesFunction(RowTransformFunction[TradesArgs]):
                     limit=params.args.max_rows or None,
                     client=client,
                     hint=hint,
+                    credentials=credentials,
                 )
                 rows.extend(found)
                 parents.extend([index] * len(found))
@@ -764,6 +780,7 @@ class EventsFunction(RowTransformFunction[EventsArgs]):
         name = "events"
         description = "Events under a Kalshi series (series_ticker required)"
         categories = ["market-data", "blended"]
+        required_secrets = [SecretLookupEntry(secret_type=auth.SECRET_TYPE)]
         tags = docs(
             category="reference",
             result_schema=EVENT_SCHEMA,
@@ -835,11 +852,18 @@ class EventsFunction(RowTransformFunction[EventsArgs]):
         rows: list[dict[str, Any]] = []
         parents: list[int] = []
         hint = CacheHint()
+        credentials = auth.for_call(params.secrets, params.attach_opaque_data)
         with api.open_client() as client:
             for index, ticker in enumerate(series):
                 if ticker is None:
                     continue
-                found = api.events(str(ticker), status=params.args.status or None, client=client, hint=hint)
+                found = api.events(
+                    str(ticker),
+                    status=params.args.status or None,
+                    client=client,
+                    hint=hint,
+                    credentials=credentials,
+                )
                 rows.extend(found)
                 parents.extend([index] * len(found))
         _emit_fanout(

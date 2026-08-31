@@ -1,8 +1,9 @@
 """Reference data: the ``series`` catalog.
 
-Unlike the market-data functions, series data has no required key, changes
-slowly, and is small enough to return whole (~232 KB for the entire exchange).
-That makes it the natural fit for a *real catalog table* rather than a function.
+Unlike the market-data functions, series data has no required key and changes
+slowly, which makes it the natural fit for a *real catalog table* rather than a
+function. It is not small: the whole catalog is ~13,600 rows and about 15.6 MB
+of JSON, gzipped on the wire and returned in a single unpaginated response.
 
 The table is declared in :mod:`vgi_kalshi.worker` as
 ``Table(name="series", function=AllSeriesFunction)``; VGI's
@@ -19,6 +20,7 @@ from typing import Any, ClassVar
 import pyarrow as pa
 from vgi.cache_control import CacheControl
 from vgi.invocation import BindResponse
+from vgi.arguments import SecretLookupEntry
 from vgi.metadata import FunctionExample
 from vgi.table_function import (
     BindParams,
@@ -28,6 +30,7 @@ from vgi.table_function import (
 )
 from vgi_rpc.rpc import OutputCollector
 
+from vgi_kalshi import auth
 from vgi_kalshi import kalshi_api as api
 from vgi_kalshi.kalshi_api import STALE_IF_ERROR, CacheHint
 from vgi_kalshi.meta import docs, examples
@@ -44,6 +47,7 @@ class AllSeriesFunction(TableFunctionGenerator[None, None]):
         name = "all_series"
         description = "Every Kalshi series (the scan backing the `series` table)"
         categories = ["reference"]
+        required_secrets = [SecretLookupEntry(secret_type=auth.SECRET_TYPE)]
         tags = docs(
             category="reference",
             result_schema=SERIES_SCHEMA,
@@ -96,7 +100,9 @@ class AllSeriesFunction(TableFunctionGenerator[None, None]):
         rather than hardcoded, so the result cache follows the exchange.
         """
         hint = CacheHint()
-        rows: list[dict[str, Any]] = api.series_list(hint=hint)
+        rows: list[dict[str, Any]] = api.series_list(
+            hint=hint, credentials=auth.for_call(params.secrets, params.attach_opaque_data)
+        )
         cache_control = (
             CacheControl(ttl=hint.max_age, stale_if_error=STALE_IF_ERROR) if hint.cacheable else None
         )

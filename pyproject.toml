@@ -10,10 +10,17 @@ requires-python = ">=3.13"
 dependencies = [
     "vgi-python[http]>=0.31.0",
     "httpx>=0.27",
+    # RSA-PSS request signing for authenticated Kalshi access. Required even
+    # though authentication is optional: the signer is imported at catalog
+    # build time to register the `kalshi` secret type.
+    "cryptography>=42",
 ]
 
 [project.optional-dependencies]
 serve = ["vgi-python[http,oauth]>=0.31.0", "vgi-rpc[sentry]>=0.44.1"]
+
+[dependency-groups]
+dev = ["pytest>=8", "ruff>=0.15"]
 
 [project.scripts]
 vgi-kalshi = "vgi_kalshi.worker:main"

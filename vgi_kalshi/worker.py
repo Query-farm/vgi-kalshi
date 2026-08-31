@@ -17,13 +17,17 @@ from __future__ import annotations
 
 import json
 import sys
+from dataclasses import replace
+from typing import Any
 
+import pyarrow as pa
 from vgi import Worker
 from vgi.catalog import Catalog, ReadOnlyCatalogInterface, Schema
-from vgi.catalog.catalog_interface import CatalogInfo
+from vgi.catalog.attach_option import AttachOptionSpec
+from vgi.catalog.catalog_interface import AttachOpaqueData, CatalogAttachResult, CatalogInfo
 from vgi.catalog.descriptors import Table
 
-from vgi_kalshi import __version__
+from vgi_kalshi import __version__, auth
 from vgi_kalshi.markets import MARKET_FUNCTIONS
 from vgi_kalshi.meta import column_comments, docs, examples, keywords
 from vgi_kalshi.reference import REFERENCE_FUNCTIONS, AllSeriesFunction
@@ -464,11 +468,57 @@ _KALSHI_CATALOG = Catalog(
 )
 
 
+#: How ATTACH may treat the optional `kalshi` credential.
 class KalshiCatalog(ReadOnlyCatalogInterface):
-    """Advertises the worker's implementation and data versions on ATTACH."""
+    """Advertises the worker's versions, its optional credential, and the auth mode.
+
+    Authentication is opt-in and, at Kalshi's entry tier, not a throughput win —
+    see the rate-limit section of the README. The credential is a DuckDB secret
+    rather than an ATTACH option because one of its two values is an RSA private
+    key, and ATTACH option strings are visible in ``duckdb_databases()``.
+
+    The one thing worth deciding at ATTACH time is what should happen when no
+    credential resolves, which is what the ``auth`` option selects.
+    """
 
     catalog = _KALSHI_CATALOG
     catalog_name = _KALSHI_CATALOG.name
+    secret_types = [auth.SECRET_SPEC]
+    attach_option_specs = [
+        AttachOptionSpec(
+            name="auth",
+            desc=(
+                "How to treat the optional 'kalshi' secret: 'auto' (default) signs when one "
+                "is present and uses public access otherwise; 'required' fails the query "
+                "when none resolves; 'off' never signs."
+            ),
+            type=pa.string(),
+            default=auth.AUTO,
+        )
+    ]
+
+    def catalog_attach(self, *, name: str, options: dict[str, Any], **kwargs: Any) -> CatalogAttachResult:
+        """Validate the ``auth`` option and carry it through to the functions.
+
+        An unknown mode is rejected here rather than ignored, because every way
+        of getting it wrong is otherwise silent: a typo'd 'require' would read as
+        'auto' and quietly serve anonymous data to a caller who asked for the
+        opposite.
+
+        The mode then becomes the catalog's attach bytes, which the framework
+        hands back to every ``process()`` as ``attach_opaque_data`` — the only
+        route an ATTACH-time choice has into a function body. The base class
+        returns a fixed constant there, which is why this replaces it.
+        """
+        mode = str(options.get("auth") or auth.AUTO).strip().lower()
+        if mode not in auth.MODES:
+            raise ValueError(f"ATTACH option auth => {mode!r} is not one of {', '.join(auth.MODES)}")
+        result = super().catalog_attach(name=name, options=options, **kwargs)
+        return replace(
+            result,
+            attach_opaque_data=AttachOpaqueData(mode.encode()),
+            attach_opaque_data_required=True,
+        )
 
     def catalogs(self) -> list[CatalogInfo]:
         """Advertise the single read-only Kalshi catalog."""

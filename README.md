@@ -36,11 +36,13 @@ Names are bare — they are already qualified by the `kalshi` catalog.
 
 | Table | |
 |---|---|
-| `series` | Every series on the exchange (~13.6k rows, one response) |
+| `series` | Every series on the exchange (~13.6k rows, ~15.6 MB, one response) |
 
-`series` is a real catalog table, not a function: no required key, small, and
+`series` is a real catalog table, not a function: no required key and
 slow-changing. It is backed by the `all_series` function via
-`Table(function=…)`, which VGI auto-wires into a scan.
+`Table(function=…)`, which VGI auto-wires into a scan. It is not small — the
+whole catalog is ~15.6 MB of JSON, gzipped on the wire — but Kalshi returns it
+unpaginated, so there is no cursor to follow and nothing to key on.
 
 ### Functions
 
@@ -173,17 +175,82 @@ FROM kalshi.markets('KXBTCD') m,
      LATERAL kalshi.orderbook(m.ticker, cache_ttl => 30) o;
 ```
 
-**Rate limiting is real.** A LATERAL over 318 markets issues 318 requests, and
-Kalshi returns HTTP 429 with no `Retry-After` to obey. Unauthenticated traffic
-is limited well below the documented Basic tier (200 read tokens/second at 10
-tokens a call): a handful of back-to-back requests is enough to draw a 429, so
-expect a large fan-out to spend real time in backoff, and reach for `cache_ttl`.
+**Rate limiting is real, and it is per-endpoint.** A LATERAL over 318 markets
+issues 318 requests, and Kalshi returns HTTP 429 with no `Retry-After` to obey.
+Measured against the public API, unauthenticated:
+
+| Endpoint | sustained | notes |
+|---|---|---|
+| `/markets` (`limit=1`) | ~28.5 req/s | no throttling |
+| `/markets` (`limit=1000`) | ~21 req/s | occasional 429 |
+| `/series` | ~17 req/s | 15.6 MB per response |
+| `/events` | **~4 req/s** | throttled far harder than the rest |
+
+`/events` is the real constraint — roughly seven times tighter than everything
+else — so a query that fans out over events needs `cache_ttl`, not more
+parallelism.
+
 `_get` retries five times with exponential backoff (~0.5s → 8s) on a 429, on a
 transient 5xx, and on a dropped connection — a `GET` is idempotent, and
 retrying only the rate limiter would let one reset connection abort a fan-out
 that had already made 300 successful calls. A 4xx is not retried, and a 429 is
 never folded into the freshness hint, since it carries the CDN's error policy
 rather than the resource's.
+
+## Authentication (optional, and rarely worth it)
+
+The whole surface this worker exposes is public, and **authenticating does not
+speed it up at Kalshi's entry tier.** Kalshi's documented budgets are per
+account, in tokens per second, with most calls costing 10:
+
+| Tier | budget | ≈ req/s | how you get it |
+|---|---|---|---|
+| *(unauthenticated)* | — | **~28.5** | measured; undocumented, presumably per-IP |
+| Basic | 200 | 20 | account signup |
+| Advanced | 300 | 30 | call the upgrade endpoint |
+| Expert | 600 | 60 | trading volume, or assigned |
+| Premier / Paragon / Prime | 1,000 / 2,000 / 4,000 | 100 / 200 / 400 | assigned |
+
+So Basic is *slower* than anonymous access, Advanced is a rounding error, and
+authentication only pays from Expert upward. Support it if you have the tier, or
+if you would rather depend on a documented limit than an undocumented one — not
+as a fix for a slow query.
+
+Credentials are a **DuckDB secret**, not an ATTACH option, because one of the two
+values is an RSA private key and ATTACH strings show up in `duckdb_databases()`:
+
+```sql
+CREATE SECRET kalshi (
+    TYPE kalshi,
+    key_id '9f8e7d6c-...',
+    private_key '-----BEGIN PRIVATE KEY-----
+...
+-----END PRIVATE KEY-----'
+);
+```
+
+`private_key` is declared redacted, so `duckdb_secrets()` masks it. Requests are
+then signed per Kalshi's scheme — RSA-PSS over SHA-256 of
+`timestamp + METHOD + /trade-api/v2 + path`, base64 — and re-signed on every
+retry, since a signature covers a timestamp and a replayed one after 8s of
+backoff is a 401.
+
+One ATTACH option decides what happens when no secret resolves:
+
+```sql
+ATTACH 'kalshi' (TYPE vgi, LOCATION 'uv run kalshi_worker.py', auth 'required');
+```
+
+| `auth` | behaviour |
+|---|---|
+| `auto` *(default)* | sign when a secret is present, use public access otherwise |
+| `required` | fail the query when no credential resolves |
+| `off` | never sign, even if a secret exists |
+
+`required` exists so a deployment that means to be authenticated cannot silently
+end up anonymous on a different rate limit. Signing stays read-only: it adds
+three headers to a `GET` and nothing else, and the credential never reaches any
+endpoint outside the public market-data surface.
 
 ## Catalog metadata
 
@@ -211,7 +278,7 @@ table cannot share one in a schema.
 ## Tests
 
 ```bash
-pytest              # 79 offline tests
+pytest              # 101 offline tests
 pytest -m live      # 18 tests against the public API
 ```
 
@@ -219,3 +286,10 @@ pytest -m live      # 18 tests against the public API
 example is catalog-qualified, calls a real object, uses the right status
 vocabulary for its position, and every function's declared result schema matches
 the schema it actually returns.
+
+`tests/test_auth.py` verifies each signature against the public half of a
+throwaway key, so it checks Kalshi's scheme rather than merely that some bytes
+were produced. `tests/test_packaging.py` checks the two entry-point scripts'
+PEP-723 headers still cover every runtime dependency — they resolve
+independently of `pyproject.toml`, so they drift silently and only an end-to-end
+`ATTACH` notices.

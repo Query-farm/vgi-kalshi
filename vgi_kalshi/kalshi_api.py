@@ -22,6 +22,8 @@ from typing import Any
 
 import httpx
 
+from vgi_kalshi.auth import Credentials
+
 #: Production base URL. Kalshi kept the ``elections`` host after the rename.
 DEFAULT_BASE_URL = "https://api.elections.kalshi.com/trade-api/v2"
 
@@ -172,6 +174,7 @@ def _get(
     *,
     client: httpx.Client | None = None,
     hint: CacheHint | None = None,
+    credentials: Credentials | None = None,
 ) -> dict[str, Any]:
     """GET ``path`` under the API base and return the decoded JSON object.
 
@@ -190,6 +193,9 @@ def _get(
             connection pool across a batch of per-row fetches.
         hint: Optional :class:`CacheHint` to fold this response's
             ``Cache-Control`` into.
+        credentials: Optional API key. When given, the request is signed;
+            when ``None`` it goes out anonymously, which is all the public
+            market-data surface needs.
 
     Returns:
         The decoded JSON response body.
@@ -205,8 +211,11 @@ def _get(
     try:
         for attempt in range(_RETRY_ATTEMPTS):
             last_attempt = attempt == _RETRY_ATTEMPTS - 1
+            # Re-signed per attempt: the signature covers a timestamp, and a
+            # retry after 8s of backoff would otherwise present a stale one.
+            headers = credentials.headers("GET", path) if credentials else None
             try:
-                response = http.get(url, params=clean)
+                response = http.get(url, params=clean, headers=headers)
             except httpx.TransportError:
                 if last_attempt:
                     raise
@@ -234,6 +243,7 @@ def _paged(
     limit: int | None = None,
     client: httpx.Client | None = None,
     hint: CacheHint | None = None,
+    credentials: Credentials | None = None,
     page_limit: int = PAGE_LIMIT,
 ) -> list[dict[str, Any]]:
     """Follow Kalshi's opaque cursor and accumulate ``key`` from every page.
@@ -254,7 +264,7 @@ def _paged(
         page_params = {**(params or {}), "limit": wanted}
         if cursor:
             page_params["cursor"] = cursor
-        payload = _get(path, page_params, client=client, hint=hint)
+        payload = _get(path, page_params, client=client, hint=hint, credentials=credentials)
         batch = payload.get(key) or []
         rows.extend(batch)
         if limit is not None and len(rows) >= limit:
@@ -280,6 +290,7 @@ def markets(
     limit: int | None = None,
     client: httpx.Client | None = None,
     hint: CacheHint | None = None,
+    credentials: Credentials | None = None,
 ) -> list[dict[str, Any]]:
     """Markets under one series, optionally narrowed to an event and/or status.
 
@@ -297,14 +308,19 @@ def markets(
         limit=limit,
         client=client,
         hint=hint,
+        credentials=credentials,
     )
 
 
 def market(
-    ticker: str, *, client: httpx.Client | None = None, hint: CacheHint | None = None
+    ticker: str,
+    *,
+    client: httpx.Client | None = None,
+    hint: CacheHint | None = None,
+    credentials: Credentials | None = None,
 ) -> dict[str, Any]:
     """A single market by ticker."""
-    return _get(f"/markets/{ticker}", client=client, hint=hint)["market"]
+    return _get(f"/markets/{ticker}", client=client, hint=hint, credentials=credentials)["market"]
 
 
 def orderbook(
@@ -313,6 +329,7 @@ def orderbook(
     depth: int | None = None,
     client: httpx.Client | None = None,
     hint: CacheHint | None = None,
+    credentials: Credentials | None = None,
 ) -> dict[str, Any]:
     """The resting-order book for one market.
 
@@ -321,7 +338,9 @@ def orderbook(
     unknown ticker is answered with 200 and two empty sides rather than a 404,
     so an empty book here does not mean the market exists.
     """
-    payload = _get(f"/markets/{ticker}/orderbook", {"depth": depth}, client=client, hint=hint)
+    payload = _get(
+        f"/markets/{ticker}/orderbook", {"depth": depth}, client=client, hint=hint, credentials=credentials
+    )
     return payload.get("orderbook_fp") or {}
 
 
@@ -334,6 +353,7 @@ def candlesticks(
     end_ts: int,
     client: httpx.Client | None = None,
     hint: CacheHint | None = None,
+    credentials: Credentials | None = None,
 ) -> list[dict[str, Any]]:
     """OHLC candlesticks for one market.
 
@@ -348,6 +368,7 @@ def candlesticks(
         {"period_interval": period_interval, "start_ts": start_ts, "end_ts": end_ts},
         client=client,
         hint=hint,
+        credentials=credentials,
     )
     return payload.get("candlesticks") or []
 
@@ -360,6 +381,7 @@ def trades(
     limit: int | None = None,
     client: httpx.Client | None = None,
     hint: CacheHint | None = None,
+    credentials: Credentials | None = None,
 ) -> list[dict[str, Any]]:
     """The public trade tape, optionally scoped to one market and a time window.
 
@@ -374,6 +396,7 @@ def trades(
         limit=limit,
         client=client,
         hint=hint,
+        credentials=credentials,
     )
 
 
@@ -389,6 +412,7 @@ def events(
     limit: int | None = None,
     client: httpx.Client | None = None,
     hint: CacheHint | None = None,
+    credentials: Credentials | None = None,
 ) -> list[dict[str, Any]]:
     """Events under one series.
 
@@ -402,16 +426,28 @@ def events(
         limit=limit,
         client=client,
         hint=hint,
+        credentials=credentials,
         page_limit=EVENTS_PAGE_LIMIT,
     )
 
 
 def series_list(
-    category: str | None = None, *, client: httpx.Client | None = None, hint: CacheHint | None = None
+    category: str | None = None,
+    *,
+    client: httpx.Client | None = None,
+    hint: CacheHint | None = None,
+    credentials: Credentials | None = None,
 ) -> list[dict[str, Any]]:
     """Every series, optionally filtered to one category.
 
-    Unpaginated by design on Kalshi's side — the whole catalog comes back in a
-    single response (~232 KB), which is what makes it viable as a real table.
+    Unpaginated by design on Kalshi's side: the whole catalog — ~13,600 rows,
+    about 15.6 MB of JSON — comes back in one response, gzipped on the wire.
+    There is no cursor to follow and no page size to pick, which is what makes
+    it viable as a table even at that size.
     """
-    return _get("/series", {"category": category}, client=client, hint=hint).get("series") or []
+    return (
+        _get("/series", {"category": category}, client=client, hint=hint, credentials=credentials).get(
+            "series"
+        )
+        or []
+    )
