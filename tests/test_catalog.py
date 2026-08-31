@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import json
 import re
+from pathlib import Path
 
 from vgi_kalshi.markets import (
     CandlesticksFunction,
+    EventFunction,
+    EventMetadataFunction,
     EventsFunction,
     MarketFunction,
     MarketsFunction,
@@ -22,6 +25,8 @@ from vgi_kalshi.historical import (
 from vgi_kalshi.reference import AllSeriesFunction, ExchangeStatusFunction
 from vgi_kalshi.worker import _KALSHI_CATALOG
 
+PACKAGE = Path(__file__).resolve().parent.parent / "vgi_kalshi"
+
 BLENDED = [
     MarketsFunction,
     MarketFunction,
@@ -32,6 +37,8 @@ BLENDED = [
     HistoricalMarketsFunction,
     HistoricalTradesFunction,
     HistoricalCandlesticksFunction,
+    EventFunction,
+    EventMetadataFunction,
 ]
 
 
@@ -58,6 +65,8 @@ class TestCatalogShape:
             "candlesticks",
             "trades",
             "events",
+            "event",
+            "event_metadata",
             "all_series",
             "all_exchange_status",
             "historical_markets",
@@ -209,3 +218,54 @@ class TestExampleChannels:
             declared = json.loads(tags["vgi.result_columns_schema"])
             assert [c["name"] for c in declared] == function.FIXED_SCHEMA.names, function.Meta.name
             assert all(c["description"] for c in declared), function.Meta.name
+
+
+class TestNoDeadApiSurface:
+    """Every endpoint wrapper must be reachable, from SQL or from a test.
+
+    This has gone wrong twice. `event_metadata()` was written, then deleted as
+    unreachable, then written again and left unreachable a second time — each
+    time invisibly, because an unused function breaks nothing. A wrapper that no
+    SQL function calls and no test exercises is either a missing feature or
+    dead weight, and both are worth failing the build over.
+    """
+
+    #: Modules that put an endpoint on the SQL surface.
+    SURFACE = ("markets.py", "reference.py", "historical.py")
+
+    @staticmethod
+    def _public_api_functions() -> set[str]:
+        """Top-level public functions defined in kalshi_api, by name."""
+        import ast
+
+        tree = ast.parse((PACKAGE / "kalshi_api.py").read_text())
+        return {
+            node.name
+            for node in tree.body
+            if isinstance(node, ast.FunctionDef) and not node.name.startswith("_")
+        }
+
+    def test_every_endpoint_wrapper_is_reachable(self) -> None:
+        api_source = (PACKAGE / "kalshi_api.py").read_text()
+        surface = "".join((PACKAGE / name).read_text() for name in self.SURFACE)
+        tests = "".join(path.read_text() for path in PACKAGE.parent.glob("tests/test_*.py"))
+        # `base_url`/`open_client` are plumbing, not endpoints.
+        candidates = self._public_api_functions() - {"base_url", "open_client"}
+        orphaned = [
+            name
+            for name in sorted(candidates)
+            if f"api.{name}(" not in surface
+            and f"api.{name}(" not in tests
+            and f"kalshi_api.{name}(" not in tests
+            and f"\n    return {name}(" not in api_source
+            and f" {name}(" not in api_source.split(f"def {name}(")[0]
+        ]
+        assert orphaned == [], (
+            f"kalshi_api functions reachable from neither SQL nor a test: {orphaned}. "
+            "Expose them as table functions or delete them."
+        )
+
+    def test_the_check_can_actually_fail(self) -> None:
+        """Guard the guard: an obviously-unreachable name must be detected."""
+        surface = "".join((PACKAGE / name).read_text() for name in self.SURFACE)
+        assert "api.definitely_not_a_real_endpoint(" not in surface

@@ -59,6 +59,8 @@ registration serves both a literal call and a correlated LATERAL:
 | `candlesticks(series_ticker, ticker)` | both | `period_interval`, `start_ts`, `end_ts` |
 | `trades(ticker)` | ticker | `min_ts`, `max_ts`, `max_rows`, `cache_ttl` |
 | `events(series_ticker)` | series_ticker | `status`, `cache_ttl` |
+| `event(event_ticker)` | event_ticker | `cache_ttl` |
+| `event_metadata(event_ticker)` | event_ticker | `cache_ttl` |
 | `historical_markets(series_ticker)` | series_ticker | `event_ticker` |
 | `historical_trades(ticker)` | ticker | `min_ts`, `max_ts`, `max_rows` |
 | `historical_candlesticks(ticker)` | ticker | `period_interval`, `start_ts`, `end_ts` |
@@ -332,8 +334,8 @@ snapshot of a moving boundary has no honest answer to.
 ## Tests
 
 ```bash
-pytest              # 139 offline tests
-pytest -m live      # 29 tests against the public API
+pytest              # 141 offline tests
+pytest -m live      # 31 tests against the public API
 ```
 
 `tests/test_catalog.py` asserts the metadata the linter reads: every shipped

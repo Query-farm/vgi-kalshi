@@ -52,12 +52,14 @@ from vgi_kalshi.kalshi_api import STALE_IF_ERROR, CacheHint
 from vgi_kalshi.meta import docs, examples
 from vgi_kalshi.schemas import (
     CANDLESTICK_SCHEMA,
+    EVENT_METADATA_SCHEMA,
     EVENT_SCHEMA,
     MARKET_SCHEMA,
     ORDERBOOK_SCHEMA,
     TRADE_SCHEMA,
     batch_from_rows,
     flatten_candlesticks,
+    flatten_event_metadata,
     flatten_orderbook,
     series_of,
     to_decimal,
@@ -971,6 +973,198 @@ class EventsFunction(RowTransformFunction[EventsArgs]):
         )
 
 
+@dataclass(slots=True, frozen=True, kw_only=True)
+class EventTickerArgs:
+    """A lone event-ticker input column, plus an opt-in cache TTL."""
+
+    event_ticker: Annotated[str, Arg(0, doc="Event ticker input column, e.g. 'KXBTCD-26SEP0417'")]
+    cache_ttl: Annotated[
+        int,
+        Arg("cache_ttl", doc="Seconds to cache this result (0 = off)", default=0, ge=0),
+    ] = 0
+
+
+class EventFunction(RowTransformFunction[EventTickerArgs]):
+    """One event by ticker — the point lookup to `events()`'s browse."""
+
+    FIXED_SCHEMA: ClassVar[pa.Schema] = EVENT_SCHEMA
+
+    class Meta:
+        name = "event"
+        description = "One Kalshi event by ticker"
+        categories = ["market-data", "blended"]
+        required_secrets = [SecretLookupEntry(secret_type=auth.SECRET_TYPE)]
+        projection_pushdown = True
+        tags = docs(
+            category="reference",
+            result_schema=EVENT_SCHEMA,
+            llm=(
+                "A single event by its exact ticker, with the same columns `events()` returns. "
+                "Use this when you already have an `event_ticker` — from a market row, say — and "
+                "want its resolution date or settlement sources without scanning the series it "
+                "belongs to. `events()` is the browse path; this is the lookup."
+            ),
+            md=(
+                "One row for one event.\n\n"
+                "### When to use this instead of `events()`\n\n"
+                "`events()` needs a series ticker and returns every event under it. If you "
+                "already hold an `event_ticker` — every market row carries one — this fetches "
+                "just that event, and composes under a LATERAL driven by markets.\n\n"
+                "### What it does not return\n\n"
+                "Kalshi's response also carries the event's markets. They are not returned here: "
+                "`markets(series, event_ticker => ...)` is the way to ask for those, and it "
+                "paginates properly where the inlined copy does not."
+            ),
+            example_queries=examples(
+                (
+                    "One event's resolution date by ticker",
+                    "SELECT event_ticker, title, strike_date FROM kalshi.main.event('KXBTCD-26SEP0417')",
+                ),
+                (
+                    "The event behind each open market in a series",
+                    "SELECT DISTINCT e.event_ticker, e.strike_date "
+                    "FROM kalshi.main.markets('KXBTCD', status => 'open') m, "
+                    "LATERAL kalshi.main.event(m.event_ticker, cache_ttl => 60) e "
+                    "ORDER BY e.strike_date",
+                ),
+            ),
+        )
+        examples = [
+            FunctionExample(
+                sql=("SELECT event_ticker, title, strike_date FROM kalshi.main.event('KXBTCD-26SEP0417')"),
+                description="One event's resolution date by ticker",
+            ),
+        ]
+
+    @classmethod
+    def on_bind(cls, params: BindParams[EventTickerArgs]) -> BindResponse:
+        return BindResponse(output_schema=cls.FIXED_SCHEMA)
+
+    @classmethod
+    def process(
+        cls,
+        params: ProcessParams[EventTickerArgs],
+        state: None,
+        batch: pa.RecordBatch,
+        out: OutputCollector,
+    ) -> None:
+        tickers = batch.column("event_ticker").to_pylist()
+        rows: list[dict[str, Any]] = []
+        parents: list[int] = []
+        hint = CacheHint()
+        credentials = auth.for_call(params.secrets, params.attach_opaque_data)
+        with api.open_client() as client:
+            for index, ticker in enumerate(tickers):
+                if ticker is None:
+                    continue
+                found = api.event(str(ticker), client=client, hint=hint, credentials=credentials)
+                if not found:
+                    continue
+                rows.append(found)
+                parents.append(index)
+        _emit_fanout(
+            out,
+            params.output_schema,
+            rows,
+            parents,
+            _origin_cache_control(hint) or _opt_in_cache_control(params.args.cache_ttl, per_value=True),
+        )
+
+
+class EventMetadataFunction(RowTransformFunction[EventTickerArgs]):
+    """Settlement sources and images for one event, one row per source."""
+
+    FIXED_SCHEMA: ClassVar[pa.Schema] = EVENT_METADATA_SCHEMA
+
+    class Meta:
+        name = "event_metadata"
+        description = "Settlement sources and images for a Kalshi event"
+        categories = ["market-data", "blended"]
+        required_secrets = [SecretLookupEntry(secret_type=auth.SECRET_TYPE)]
+        projection_pushdown = True
+        tags = docs(
+            category="reference",
+            result_schema=EVENT_METADATA_SCHEMA,
+            llm=(
+                "What an event settles against, flattened to one row per source, plus the images "
+                "Kalshi displays for it. Reach for this to answer 'how is this decided?' — the "
+                "named source is the thing that determines the outcome. Distinct from the "
+                "`settlement_sources` column on `events()`, which is the summary inlined into "
+                "the listing; the images only exist here."
+            ),
+            md=(
+                "One row per settlement source for one event.\n\n"
+                "### Why one row per source\n\n"
+                "An event can settle against more than one source. Flattening them means they "
+                "join and aggregate like ordinary rows, at the cost of repeating the image "
+                "columns — the same trade-off `orderbook()` makes with price levels. An event "
+                "with no declared sources still returns one row, so a lookup always answers "
+                "with its images rather than with nothing.\n\n"
+                "### Versus the events() column\n\n"
+                "`events()` carries a nested `settlement_sources` list, which is the right shape "
+                "when you are already scanning events. This endpoint is the one that also has "
+                "the images, and it is a point lookup rather than a scan."
+            ),
+            example_queries=examples(
+                (
+                    "What decides one event's outcome",
+                    "SELECT settlement_source_name, settlement_source_url "
+                    "FROM kalshi.main.event_metadata('KXBTCD-26SEP0417')",
+                ),
+                (
+                    "Settlement sources across a whole series",
+                    "SELECT DISTINCT md.settlement_source_name "
+                    "FROM kalshi.main.events('KXBTCD') e, "
+                    "LATERAL kalshi.main.event_metadata(e.event_ticker, cache_ttl => 300) md "
+                    "WHERE md.settlement_source_name IS NOT NULL "
+                    "ORDER BY md.settlement_source_name",
+                ),
+            ),
+        )
+        examples = [
+            FunctionExample(
+                sql=(
+                    "SELECT settlement_source_name, settlement_source_url "
+                    "FROM kalshi.main.event_metadata('KXBTCD-26SEP0417')"
+                ),
+                description="What decides one event's outcome",
+            ),
+        ]
+
+    @classmethod
+    def on_bind(cls, params: BindParams[EventTickerArgs]) -> BindResponse:
+        return BindResponse(output_schema=cls.FIXED_SCHEMA)
+
+    @classmethod
+    def process(
+        cls,
+        params: ProcessParams[EventTickerArgs],
+        state: None,
+        batch: pa.RecordBatch,
+        out: OutputCollector,
+    ) -> None:
+        tickers = batch.column("event_ticker").to_pylist()
+        rows: list[dict[str, Any]] = []
+        parents: list[int] = []
+        hint = CacheHint()
+        credentials = auth.for_call(params.secrets, params.attach_opaque_data)
+        with api.open_client() as client:
+            for index, ticker in enumerate(tickers):
+                if ticker is None:
+                    continue
+                payload = api.event_metadata(str(ticker), client=client, hint=hint, credentials=credentials)
+                found = flatten_event_metadata(str(ticker), payload)
+                rows.extend(found)
+                parents.extend([index] * len(found))
+        _emit_fanout(
+            out,
+            params.output_schema,
+            rows,
+            parents,
+            _origin_cache_control(hint) or _opt_in_cache_control(params.args.cache_ttl, per_value=True),
+        )
+
+
 MARKET_FUNCTIONS: list[type] = [
     MarketsFunction,
     MarketFunction,
@@ -978,4 +1172,6 @@ MARKET_FUNCTIONS: list[type] = [
     CandlesticksFunction,
     TradesFunction,
     EventsFunction,
+    EventFunction,
+    EventMetadataFunction,
 ]

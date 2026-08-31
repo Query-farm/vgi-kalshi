@@ -320,6 +320,27 @@ _AGENT_TEST_TASKS = json.dumps(
             "unordered": True,
         },
         {
+            "name": "how_is_it_decided",
+            "prompt": (
+                "Pick any event in the Kalshi series KXBTCD. What question does it ask, when "
+                "does it resolve, and what source decides the outcome?"
+            ),
+            "reference_sql": [
+                "SELECT event_ticker, title, strike_date FROM kalshi.main.event("
+                "(SELECT event_ticker FROM kalshi.main.events('KXBTCD') "
+                "ORDER BY strike_date LIMIT 1))",
+                "SELECT settlement_source_name, settlement_source_url "
+                "FROM kalshi.main.event_metadata("
+                "(SELECT event_ticker FROM kalshi.main.events('KXBTCD') "
+                "ORDER BY strike_date LIMIT 1))",
+            ],
+            "success_criteria": (
+                "Finds the settlement source via event_metadata rather than guessing from the "
+                "title, and reports the event's strike date."
+            ),
+            "unordered": True,
+        },
+        {
             "name": "book_depth",
             "prompt": (
                 "How much size is resting on each side of the book for any open market in the "

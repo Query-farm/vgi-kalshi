@@ -272,6 +272,36 @@ class TestExchangeStatus:
         assert hint.max_age == 1
 
 
+class TestEventLookups:
+    """The point lookups: one event, and what it settles against."""
+
+    def test_event_by_ticker_matches_the_listing(self) -> None:
+        """`event()` and `events()` describe the same thing, so they must agree."""
+        listed = api.events(SERIES, limit=1)
+        if not listed:
+            pytest.skip(f"no events in {SERIES} right now")
+        ticker = listed[0]["event_ticker"]
+        one = api.event(ticker)
+        assert one.get("event_ticker") == ticker
+        for column in ("series_ticker", "title", "strike_date"):
+            assert one.get(column) == listed[0].get(column), column
+        assert batch_from_rows([one], EVENT_SCHEMA).schema == EVENT_SCHEMA
+
+    def test_metadata_flattens_to_one_row_per_source(self) -> None:
+        from vgi_kalshi.schemas import EVENT_METADATA_SCHEMA, flatten_event_metadata
+
+        listed = api.events(SERIES, limit=1)
+        if not listed:
+            pytest.skip(f"no events in {SERIES} right now")
+        ticker = listed[0]["event_ticker"]
+        rows = flatten_event_metadata(ticker, api.event_metadata(ticker))
+        batch = batch_from_rows(rows, EVENT_METADATA_SCHEMA)
+        assert batch.schema == EVENT_METADATA_SCHEMA
+        # An event with no declared sources still yields its images.
+        assert batch.num_rows >= 1
+        assert set(batch.column("event_ticker").to_pylist()) == {ticker}
+
+
 class TestSeries:
     def test_whole_catalog_is_one_response(self) -> None:
         batch = batch_from_rows(api.series_list(), SERIES_SCHEMA)
