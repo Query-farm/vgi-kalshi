@@ -19,10 +19,10 @@ import os
 import re
 import threading
 import time
-from urllib.parse import quote
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 

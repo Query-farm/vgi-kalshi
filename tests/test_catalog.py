@@ -6,6 +6,12 @@ import json
 import re
 from pathlib import Path
 
+from vgi_kalshi.historical import (
+    HistoricalCandlesticksFunction,
+    HistoricalCutoffFunction,
+    HistoricalMarketsFunction,
+    HistoricalTradesFunction,
+)
 from vgi_kalshi.markets import (
     CandlesticksFunction,
     EventFunction,
@@ -15,12 +21,6 @@ from vgi_kalshi.markets import (
     MarketsFunction,
     OrderbookFunction,
     TradesFunction,
-)
-from vgi_kalshi.historical import (
-    HistoricalCandlesticksFunction,
-    HistoricalCutoffFunction,
-    HistoricalMarketsFunction,
-    HistoricalTradesFunction,
 )
 from vgi_kalshi.reference import AllSeriesFunction, ExchangeStatusFunction
 from vgi_kalshi.worker import _KALSHI_CATALOG

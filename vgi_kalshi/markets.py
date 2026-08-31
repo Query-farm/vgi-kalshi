@@ -425,7 +425,8 @@ class MarketFunction(RowTransformFunction[TickerArgs]):
                 (
                     "Current quote for one market by ticker",
                     "SELECT ticker, status, yes_bid_dollars, yes_ask_dollars "
-                    "FROM kalshi.main.market((SELECT ticker FROM kalshi.main.markets('KXBTCD') WHERE status = 'active' AND volume_24h_fp > 100 LIMIT 1))",
+                    "FROM kalshi.main.market((SELECT ticker FROM kalshi.main.markets('KXBTCD') "
+                    "WHERE status = 'active' AND volume_24h_fp > 100 LIMIT 1))",
                 ),
             ),
         )
@@ -433,7 +434,8 @@ class MarketFunction(RowTransformFunction[TickerArgs]):
             FunctionExample(
                 sql=(
                     "SELECT ticker, status, yes_bid_dollars, yes_ask_dollars "
-                    "FROM kalshi.main.market((SELECT ticker FROM kalshi.main.markets('KXBTCD') WHERE status = 'active' AND volume_24h_fp > 100 LIMIT 1))"
+                    "FROM kalshi.main.market((SELECT ticker FROM kalshi.main.markets('KXBTCD') "
+                    "WHERE status = 'active' AND volume_24h_fp > 100 LIMIT 1))"
                 ),
                 description="Current quote for one market by ticker",
             ),
@@ -532,7 +534,8 @@ class OrderbookFunction(RowTransformFunction[OrderbookArgs]):
                 (
                     "Full depth on both sides of one market's book",
                     "SELECT side, price_dollars, count_fp "
-                    "FROM kalshi.main.orderbook((SELECT ticker FROM kalshi.main.markets('KXBTCD') WHERE status = 'active' AND volume_24h_fp > 100 LIMIT 1)) "
+                    "FROM kalshi.main.orderbook((SELECT ticker FROM kalshi.main.markets('KXBTCD') "
+                    "WHERE status = 'active' AND volume_24h_fp > 100 LIMIT 1)) "
                     "ORDER BY side, price_dollars DESC",
                 ),
                 (

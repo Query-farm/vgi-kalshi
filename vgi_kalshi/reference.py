@@ -18,9 +18,9 @@ from __future__ import annotations
 from typing import Any, ClassVar
 
 import pyarrow as pa
+from vgi.arguments import SecretLookupEntry
 from vgi.cache_control import CacheControl
 from vgi.invocation import BindResponse
-from vgi.arguments import SecretLookupEntry
 from vgi.metadata import FunctionExample
 from vgi.table_function import (
     BindParams,

@@ -39,7 +39,9 @@ serve = ["vgi-python[http,oauth]>=0.31.0", "vgi-rpc[sentry]>=0.44.1"]
 [dependency-groups]
 dev = [
     "pytest>=8",
-    "ruff>=0.15",
+    # Pinned to a minor: the rule set is version-dependent, so an unpinned ruff
+    # means CI can fail on a commit that was clean locally.
+    "ruff>=0.16,<0.17",
     # Drives a real ATTACH in tests/test_end_to_end.py. Every serious defect in
     # this worker was found by executing SQL against it, not by a unit test.
     "duckdb>=1.1",
@@ -71,6 +73,12 @@ vgi-rpc = { path = "../vgi-rpc" }
 [tool.ruff]
 line-length = 110
 target-version = "py313"
+
+# Selected explicitly rather than left to the default set, which changes between
+# ruff releases: 0.15 and 0.16 disagreed by 99 findings on this tree, so CI and
+# a developer's shell could reach opposite conclusions about the same commit.
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "C4"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

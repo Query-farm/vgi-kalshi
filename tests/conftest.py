@@ -24,7 +24,7 @@ from vgi_kalshi.kalshi_api import KalshiError
 
 
 @pytest.fixture(autouse=True)
-def _hermetic_connection_pool() -> Generator[None, None, None]:
+def _hermetic_connection_pool() -> Generator[None]:
     """Give every test a clean connection pool.
 
     `kalshi_api` keeps a process-wide client so a paged scan does not pay a TLS
@@ -38,7 +38,7 @@ def _hermetic_connection_pool() -> Generator[None, None, None]:
 
 
 @pytest.hookimpl(hookwrapper=True)
-def pytest_runtest_makereport(item: pytest.Item, call: pytest.CallInfo[Any]) -> Generator[None, Any, None]:
+def pytest_runtest_makereport(item: pytest.Item, call: pytest.CallInfo[Any]) -> Generator[None, Any]:
     """Rewrite an exhausted-rate-limit failure into a skip, for live tests only.
 
     Scoped to the ``live`` marker on purpose: an offline test seeing a 429 means

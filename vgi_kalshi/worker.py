@@ -80,7 +80,8 @@ _EXAMPLE_QUERIES = examples(
     (
         "The busiest open market's current quote",
         "SELECT ticker, status, yes_bid_dollars, yes_ask_dollars "
-        "FROM kalshi.main.market((SELECT ticker FROM kalshi.main.markets('KXBTCD') WHERE status = 'active' AND volume_24h_fp > 100 LIMIT 1))",
+        "FROM kalshi.main.market((SELECT ticker FROM kalshi.main.markets('KXBTCD') "
+        "WHERE status = 'active' AND volume_24h_fp > 100 LIMIT 1))",
     ),
     (
         "Crypto series read from the scan function behind the table",
@@ -650,7 +651,9 @@ _CUTOFF_DOCS = docs(
 _KALSHI_CATALOG = Catalog(
     name="kalshi",
     default_schema="main",
-    comment="Read-only Kalshi prediction-market data: markets, order books, candlesticks, trades, events, series",
+    comment=(
+        "Read-only Kalshi prediction-market data: markets, order books, candlesticks, trades, events, series"
+    ),
     tags=_CATALOG_TAGS,
     schemas=[
         Schema(

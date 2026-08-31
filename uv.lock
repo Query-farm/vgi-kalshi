@@ -797,7 +797,7 @@ dev = [
     { name = "duckdb", specifier = ">=1.1" },
     { name = "pytest", specifier = ">=8" },
     { name = "pytz", specifier = ">=2024.1" },
-    { name = "ruff", specifier = ">=0.15" },
+    { name = "ruff", specifier = ">=0.16,<0.17" },
 ]
 
 [[package]]
