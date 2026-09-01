@@ -167,3 +167,62 @@ class TestCatalogShape:
             "SELECT typeof(yes_bid_dollars) FROM kalshi.main.markets('KXBTCD') LIMIT 1"
         ).fetchone()
         assert kind is None or kind[0] == "DECIMAL(18,4)"
+
+
+class TestMicrostructureColumns:
+    """The four columns added in 1.1.0, against live payloads.
+
+    Offline tests fix the shapes, but only a real scan proves Kalshi still
+    sends them and that the nested coercion survives the round trip. A struct
+    of decimals is exactly the sort of column that builds as all-NULL without
+    anyone noticing.
+    """
+
+    def test_price_ranges_arrive_as_usable_decimals(self, con) -> None:
+        rows = con.execute(
+            "SELECT price_ranges FROM kalshi.main.markets(?, status => 'open') "
+            "WHERE price_ranges IS NOT NULL LIMIT 5",
+            [SERIES],
+        ).fetchall()
+        assert rows, "no market carried a price ladder"
+        for (bands,) in rows:
+            assert bands, "price_ranges present but empty"
+            for band in bands:
+                assert band["step"] is not None and band["step"] > 0
+
+    def test_spread_can_be_measured_in_ticks(self, con) -> None:
+        """The reason the column exists: a spread is only comparable in ticks."""
+        (ticks,) = con.execute(
+            "SELECT median((yes_ask_dollars - yes_bid_dollars) / list_filter(price_ranges, "
+            'r -> r.start <= yes_bid_dollars AND r."end" > yes_bid_dollars)[1].step) '
+            "FROM kalshi.main.markets(?, status => 'open') WHERE yes_bid_dollars > 0",
+            [SERIES],
+        ).fetchone()
+        assert ticks is not None and ticks >= 1
+
+    def test_updated_time_is_a_real_instant(self, con) -> None:
+        (stale,) = con.execute(
+            "SELECT count(*) FROM kalshi.main.markets(?, status => 'open') WHERE updated_time IS NULL",
+            [SERIES],
+        ).fetchone()
+        assert stale == 0, "every open market should carry an updated_time"
+
+    def test_custom_strike_reads_as_a_map(self, con) -> None:
+        """KXFEDDECISION is the canonical categorical-outcome series."""
+        rows = con.execute(
+            "SELECT custom_strike['Hike'], custom_strike['Cut'] "
+            "FROM kalshi.main.markets('KXFEDDECISION', status => 'open') "
+            "WHERE custom_strike IS NOT NULL LIMIT 5"
+        ).fetchall()
+        assert rows, "KXFEDDECISION carried no custom_strike"
+        assert any(hike or cut for hike, cut in rows)
+
+    def test_expiration_value_survives_a_non_numeric_settlement(self, con) -> None:
+        """It is VARCHAR precisely because KXFEDDECISION settles to prose."""
+        rows = con.execute(
+            "SELECT DISTINCT expiration_value FROM kalshi.main.historical_markets('KXFEDDECISION') "
+            "WHERE expiration_value <> '' LIMIT 5"
+        ).fetchall()
+        if not rows:
+            pytest.skip("no settled KXFEDDECISION markets in the archive window")
+        assert all(isinstance(v, str) for (v,) in rows)

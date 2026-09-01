@@ -236,6 +236,63 @@ join on and float equality on `87299.99` does not hold. Do not recover the
 threshold from the ticker or the subtitle: `subtitle` is not always populated,
 and a ticker is not a contract.
 
+**A spread only means something in ticks.** Kalshi quotes a market in price
+bands, each with its own step, and `price_ranges` is that ladder. The step is
+not constant across a book: `KXPRESNOMR` steps by `0.001` below `0.10` and above
+`0.90` but by `0.01` in between, while `KXFEDDECISION` and `KXBTCD` step by
+`0.01` throughout. So a raw spread is not comparable across markets — divide by
+the step of the band the price sits in:
+
+```sql
+SELECT yes_sub_title,
+       yes_ask_dollars - yes_bid_dollars AS spread,
+       (yes_ask_dollars - yes_bid_dollars) / list_filter(
+           price_ranges,
+           r -> r.start <= yes_bid_dollars AND r."end" > yes_bid_dollars
+       )[1].step AS spread_in_ticks
+FROM kalshi.markets('KXPRESNOMR', status => 'open')
+WHERE yes_bid_dollars > 0;
+```
+
+Run that across `KXPRESNOMR`, `KXFEDDECISION` and `KXBTCD` and all three come
+back at a median of exactly **1.0 ticks**, despite raw median spreads of
+`0.002`, `0.010` and `0.010`. Comparing the raw numbers would have said the
+political book was five times tighter; it is not, it is quoted on a finer grid.
+
+**`custom_strike` is the outcome when there is no number line.** A market with
+`strike_type = 'custom'` carries NULL in both strike columns because the
+outcome is categorical, and this `MAP(VARCHAR, VARCHAR)` is the machine-readable
+form. The key matters as much as the value — `KXFEDDECISION` splits into
+`{'Hike': '25'}` and `{'Cut': '25'}`, which are opposite outcomes:
+
+```sql
+SELECT custom_strike['Hike'] AS hike_bps, custom_strike['Cut'] AS cut_bps,
+       (yes_bid_dollars + yes_ask_dollars) / 2 AS implied_probability
+FROM kalshi.markets('KXFEDDECISION', status => 'open')
+WHERE custom_strike IS NOT NULL;
+```
+
+On an *ordinary* numeric strike it holds contract metadata instead — `KXWTI`
+sets `front_month_contract` and `strike_date` — so it is not exclusive with
+`floor_strike`.
+
+**`updated_time` is the staleness signal.** Volume only proxies it: a market
+with no volume today may be actively quoted or may have been abandoned in July.
+This says which. `KXPRESNOMR` currently has open contracts whose row has not
+changed in 55 days.
+
+```sql
+SELECT yes_sub_title, date_diff('day', updated_time, now()) AS days_stale
+FROM kalshi.markets('KXPRESNOMR', status => 'open')
+ORDER BY updated_time;
+```
+
+**`expiration_value` is what the underlying actually resolved to**, in the
+series' own units, and it is what a backtest scores against — `result` only
+says which side won. It is `VARCHAR` rather than a number because it is not
+always one: `KXWTI` settles to `'85.76'`, `KXFEDDECISION` to
+`'Fed maintains rate'`. Cast it when the series is numeric.
+
 **Money is `DECIMAL`, never `DOUBLE`.** Kalshi sends prices and counts as
 fixed-point *strings* (`"0.7000"`, `"136798.00"`) in two flavours: `*_dollars`
 at 4dp and `*_fp` at 2dp. They map to `decimal128(18,4)` and `decimal128(18,2)`.
@@ -524,13 +581,13 @@ say nothing about the code.
 It earns the wait. The behavioural tier has caught, on separate runs, a scan
 that wedged the client uncancellably, a timestamp that crashed every consumer
 of a row, and a shipped example that could not bind — none of which any of the
-234 offline tests could see.
+252 offline tests could see.
 
 ## Tests
 
 ```bash
-pytest              # 234 offline tests
-pytest -m live      # 49 tests against the public API
+pytest              # 252 offline tests
+pytest -m live      # 54 tests against the public API
 ```
 
 `tests/test_catalog.py` asserts the metadata the linter reads: every shipped

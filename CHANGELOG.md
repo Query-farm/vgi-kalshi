@@ -1,5 +1,48 @@
 # Changelog
 
+## 1.1.0
+
+### Surface
+
+Four columns Kalshi was already sending on every market, and that the schema
+dropped. Each had been the binding constraint on a real analysis.
+
+- `price_ranges` — the tick ladder, as `STRUCT("start", "end", step)[]` in
+  dollars. The step is not constant within a book (`KXPRESNOMR` steps by 0.001
+  below 0.10 and above 0.90, 0.01 in between; `KXFEDDECISION` and `KXBTCD` step
+  by 0.01 throughout), so a raw spread is not comparable across markets. Divided
+  by the step of the band the price sits in, all three series come back at a
+  median spread of exactly 1.0 ticks — the raw numbers say the political book is
+  five times tighter, and that is an artifact of the grid.
+
+- `custom_strike` — `MAP(VARCHAR, VARCHAR)`. The machine-readable outcome for a
+  `strike_type = 'custom'` market, where both strike columns are NULL because
+  the outcome is categorical. The key is meaningful as well as the value:
+  `KXFEDDECISION` splits into `{'Hike': '25'}` and `{'Cut': '25'}`. On an
+  ordinary numeric strike it carries contract metadata instead, so it is not
+  exclusive with `floor_strike`.
+
+- `updated_time` — when Kalshi last changed the row. The staleness signal that
+  volume only proxies: `KXPRESNOMR` has open contracts untouched for 55 days.
+
+- `expiration_value` — what the underlying actually resolved to, in the series'
+  own units; the column a backtest scores against, since `result` only says
+  which side won. `VARCHAR`, because it is not always a number: `KXWTI` settles
+  to `'85.76'`, `KXFEDDECISION` to `'Fed maintains rate'`.
+
+All four are on `historical_markets` too, which derives from the market schema.
+
+### Fixed
+
+- Nested columns now convert their leaves to the declared type. Arrow refuses a
+  decimal *string* inside a struct and Kalshi sends every price as one, so
+  `price_ranges` would have built as silently all-NULL — a column that exists
+  and carries nothing. The coercion walks the declared type and stays total, so
+  a leaf Arrow would reject becomes NULL rather than costing the batch.
+
+- `_sql_type` renders `MAP`, which it previously had no mapping for; declaring a
+  map column raised `ValueError` at catalog build time.
+
 ## 1.0.0
 
 First release considered production-ready.

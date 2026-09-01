@@ -373,3 +373,109 @@ class TestStrikeColumns:
     def test_a_junk_strike_is_null_not_fatal(self) -> None:
         batch = batch_from_rows([{"floor_strike": "not-a-number"}], MARKET_SCHEMA)
         assert batch.column("floor_strike").to_pylist() == [None]
+
+
+class TestMicrostructureColumns:
+    """`price_ranges`, `custom_strike`, `updated_time` and `expiration_value`.
+
+    Each was already in Kalshi's payload and dropped on the floor, and each was
+    the binding constraint on a real analysis: the tick ladder to tell a
+    one-tick spread from a wide one, the structured outcome for markets where
+    floor/cap are NULL, the staleness signal that volume only proxies, and what
+    the underlying actually resolved to.
+    """
+
+    def _row(self, **overrides: object) -> dict:
+        row = {
+            "ticker": "KXFEDDECISION-28JAN-H25",
+            "custom_strike": {"Hike": "25"},
+            "updated_time": "2026-04-09T14:07:31.692027Z",
+            "expiration_value": "",
+            "price_ranges": [
+                {"start": "0.0000", "end": "0.1000", "step": "0.0010"},
+                {"start": "0.1000", "end": "0.9000", "step": "0.0100"},
+            ],
+        }
+        row.update(overrides)
+        return row
+
+    def test_price_range_strings_become_decimals(self) -> None:
+        """Arrow rejects a decimal string inside a struct, so this needs coercion.
+
+        Without it the column builds as all-NULL rather than failing loudly,
+        which is the worst of both outcomes.
+        """
+        batch = batch_from_rows([self._row()], MARKET_SCHEMA)
+        bands = batch.to_pydict()["price_ranges"][0]
+        assert bands == [
+            {"start": Decimal("0.0000"), "end": Decimal("0.1000"), "step": Decimal("0.0010")},
+            {"start": Decimal("0.1000"), "end": Decimal("0.9000"), "step": Decimal("0.0100")},
+        ]
+
+    def test_tick_is_arithmetic_not_text(self) -> None:
+        """The point of the column: comparing a spread against a step."""
+        batch = batch_from_rows([self._row()], MARKET_SCHEMA)
+        step = batch.to_pydict()["price_ranges"][0][0]["step"]
+        assert Decimal("0.0100") / step == 10
+
+    def test_custom_strike_is_a_map(self) -> None:
+        batch = batch_from_rows([self._row()], MARKET_SCHEMA)
+        assert dict(batch.to_pydict()["custom_strike"][0]) == {"Hike": "25"}
+
+    def test_custom_strike_absent_is_null_not_empty(self) -> None:
+        """Most markets never carry one; NULL and {} mean different things."""
+        row = self._row()
+        del row["custom_strike"]
+        assert batch_from_rows([row], MARKET_SCHEMA).to_pydict()["custom_strike"][0] is None
+
+    def test_updated_time_parses(self) -> None:
+        got = batch_from_rows([self._row()], MARKET_SCHEMA).to_pydict()["updated_time"][0]
+        assert got == datetime(2026, 4, 9, 14, 7, 31, 692027, tzinfo=UTC)
+
+    def test_expiration_value_keeps_non_numeric_settlements(self) -> None:
+        """KXWTI settles to '85.76', KXFEDDECISION to 'Fed maintains rate'.
+
+        A decimal column would have silently NULLed every categorical series.
+        """
+        rows = [
+            self._row(expiration_value="85.76"),
+            self._row(expiration_value="Fed maintains rate"),
+        ]
+        assert batch_from_rows(rows, MARKET_SCHEMA).to_pydict()["expiration_value"] == [
+            "85.76",
+            "Fed maintains rate",
+        ]
+
+    @pytest.mark.parametrize(
+        "bad",
+        [
+            {"price_ranges": "not a list"},
+            {"price_ranges": [{"start": "x", "end": None, "step": "0.01"}]},
+            {"price_ranges": [None]},
+            {"custom_strike": ["not", "a", "map"]},
+            {"custom_strike": {"k": None}},
+            {"updated_time": "0001-01-01T00:00:00Z"},
+        ],
+    )
+    def test_malformed_nested_values_never_kill_the_batch(self, bad: dict) -> None:
+        """One bad market must not cost every row beside it.
+
+        This is the invariant three separate production defects came from.
+        """
+        rows = [self._row(), self._row(**bad), self._row()]
+        batch = batch_from_rows(rows, MARKET_SCHEMA)
+        assert batch.num_rows == 3
+        assert batch.to_pydict()["ticker"][2] == "KXFEDDECISION-28JAN-H25"
+
+    def test_historical_markets_inherit_the_columns(self) -> None:
+        from vgi_kalshi.schemas import HISTORICAL_MARKET_SCHEMA
+
+        for name in ("price_ranges", "custom_strike", "updated_time", "expiration_value"):
+            assert name in HISTORICAL_MARKET_SCHEMA.names
+
+    def test_every_new_column_is_documented(self) -> None:
+        """vgi-lint fails the build on an undocumented column."""
+        from vgi_kalshi.meta import comment_of
+
+        for name in ("price_ranges", "custom_strike", "updated_time", "expiration_value"):
+            assert comment_of(MARKET_SCHEMA.field(name)), name

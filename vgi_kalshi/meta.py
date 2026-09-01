@@ -56,6 +56,8 @@ def _sql_type(kind: pa.DataType) -> str:
         return "INTEGER"
     if pa.types.is_string(kind) or pa.types.is_large_string(kind):
         return "VARCHAR"
+    if pa.types.is_map(kind):
+        return f"MAP({_sql_type(kind.key_type)}, {_sql_type(kind.item_type)})"
     if pa.types.is_list(kind) or pa.types.is_large_list(kind):
         return f"{_sql_type(kind.value_type)}[]"
     if pa.types.is_struct(kind):

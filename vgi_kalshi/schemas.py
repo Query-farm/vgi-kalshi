@@ -34,6 +34,14 @@ COUNT = pa.decimal128(18, 2)
 #: you aggregate over, and float equality on 87299.99 is a trap.
 STRIKE = pa.decimal128(18, 4)
 
+#: One band of the tick ladder. Kalshi quotes a market in steps that can change
+#: with the price level, so the tick is a property of *where* a contract trades,
+#: not of the market alone: KXPRESNOMR steps by 0.001 below 0.10 and above 0.90
+#: but by 0.01 in between, while KXFEDDECISION and KXBTCD step by 0.01
+#: throughout. Field names match Kalshi's own so the nested coercion stays a
+#: plain walk of the declared type.
+PRICE_RANGE = pa.struct([("start", DOLLARS), ("end", DOLLARS), ("step", DOLLARS)])
+
 #: Kalshi timestamps are RFC 3339 with a trailing ``Z``.
 TIMESTAMP = pa.timestamp("us", tz="UTC")
 
@@ -183,7 +191,45 @@ def column(rows: Sequence[dict[str, Any]], key: str, field: pa.Field) -> pa.Arra
     try:
         return pa.array(values, type=field.type)
     except (pa.ArrowInvalid, pa.ArrowTypeError, TypeError, ValueError):
-        return pa.array([_nullable_nested(v, field.type) for v in values], type=field.type)
+        pass
+    coerced = [_coerce_nested(v, field.type) for v in values]
+    try:
+        return pa.array(coerced, type=field.type)
+    except (pa.ArrowInvalid, pa.ArrowTypeError, TypeError, ValueError):
+        return pa.array([_nullable_nested(v, field.type) for v in coerced], type=field.type)
+
+
+def _coerce_nested(value: Any, kind: pa.DataType) -> Any:
+    """Convert a nested payload's leaves to what ``kind`` declares.
+
+    Arrow will not take a decimal *string* inside a struct — it wants a Decimal
+    — and Kalshi sends every price as a string, so ``price_ranges`` cannot be
+    built without this. Walking the declared type keeps that conversion in one
+    place and reuses the same total leaf parsers as the flat columns: a leaf
+    Arrow would reject becomes NULL rather than costing the batch.
+    """
+    if value is None:
+        return None
+    if pa.types.is_list(kind) or pa.types.is_large_list(kind):
+        if not isinstance(value, (list, tuple)):
+            return None
+        return [_coerce_nested(item, kind.value_type) for item in value]
+    if pa.types.is_struct(kind):
+        if not isinstance(value, dict):
+            return None
+        return {f.name: _coerce_nested(value.get(f.name), f.type) for f in kind}
+    if pa.types.is_decimal(kind):
+        parsed = to_decimal(value)
+        return (
+            parsed if parsed is not None and fits_decimal(parsed, cast("pa.Decimal128Type", kind)) else None
+        )
+    if pa.types.is_timestamp(kind):
+        return to_timestamp(value)
+    if pa.types.is_integer(kind):
+        return to_integer(value)
+    if pa.types.is_string(kind):
+        return str(value)
+    return value
 
 
 def _nullable_nested(value: Any, kind: pa.DataType) -> Any:
@@ -245,6 +291,27 @@ MARKET_SCHEMA = pa.schema(
             "'between' strikes, NULL for 'greater'. Same units as floor_strike.",
         ),
         field(
+            "custom_strike",
+            pa.map_(pa.string(), pa.string()),
+            "Kalshi's structured key/value bag for this contract, and the only machine-"
+            "readable form of what a 'custom' strike says — those markets carry NULL "
+            "floor_strike and cap_strike because the outcome is categorical, not a number "
+            "line. The key carries meaning as well as the value: KXFEDDECISION splits into "
+            "{'Hike': '25'} and {'Cut': '25'}, which are opposite outcomes. On an ordinary "
+            "numeric strike it holds contract metadata instead — KXWTI sets "
+            "front_month_contract and strike_date — so it is not exclusive with the strike "
+            "columns. Read it rather than parsing yes_sub_title.",
+        ),
+        field(
+            "price_ranges",
+            pa.list_(PRICE_RANGE),
+            "The tick ladder: the price bands this market quotes in, each with its own "
+            "step, in dollars. Needed to tell a one-tick spread from a wide one, because "
+            "the step is not the same everywhere — a market may step by 0.001 in the tails "
+            "and 0.01 in the middle, so the same 0.01 spread is one tick at 0.50 and ten "
+            "at 0.02. Ordered by start; look up the band containing the price of interest.",
+        ),
+        field(
             "status",
             pa.string(),
             "Lifecycle state: initialized, active, closed, determined, settled or finalized. "
@@ -254,6 +321,13 @@ MARKET_SCHEMA = pa.schema(
         field("open_time", TIMESTAMP, "When the market opened, or will open, for trading."),
         field("close_time", TIMESTAMP, "When trading closes and the outcome is locked in."),
         field("expiration_time", TIMESTAMP, "When the contract expires and settlement is final."),
+        field(
+            "updated_time",
+            TIMESTAMP,
+            "When Kalshi last changed this market's row. The staleness signal: a market "
+            "whose quotes have not moved in weeks is priced but not traded, and volume "
+            "alone does not distinguish that from one that simply had a quiet day.",
+        ),
         field("yes_bid_dollars", DOLLARS, "Best resting bid for YES, in dollars per contract (0 to 1)."),
         field("yes_ask_dollars", DOLLARS, "Best resting ask for YES, in dollars per contract (0 to 1)."),
         field("no_bid_dollars", DOLLARS, "Best resting bid for NO, in dollars per contract (0 to 1)."),
@@ -276,6 +350,14 @@ MARKET_SCHEMA = pa.schema(
         field("liquidity_dollars", DOLLARS, "Total dollar value resting in the order book on both sides."),
         field("notional_value_dollars", DOLLARS, "Dollar value one contract pays out when it settles YES."),
         field("result", pa.string(), "Settled outcome ('yes' or 'no'); empty until the market settles."),
+        field(
+            "expiration_value",
+            pa.string(),
+            "What the underlying actually resolved to, in the series' own units; empty "
+            "until the market settles. The column a backtest scores against, since result "
+            "only says which side won. String rather than a number because it is not "
+            "always one: KXWTI settles to '85.76', KXFEDDECISION to 'Fed maintains rate'.",
+        ),
         field(
             "can_close_early",
             pa.bool_(),
