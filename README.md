@@ -42,17 +42,36 @@ uv run serve.py --port 8000        # HTTP
 ATTACH 'kalshi' (TYPE vgi, LOCATION 'uv run kalshi_worker.py');
 ```
 
-Both scripts carry PEP-723 headers pinning the published dependencies, so they
-run from a fresh clone with nothing installed. For a deployment, install the
-package and use its console script instead — it does not depend on the working
-directory, which the script form does:
+Both scripts carry PEP-723 headers pinning their dependencies, so they run from
+a fresh clone with nothing installed. That `LOCATION` resolves
+`kalshi_worker.py` against the working directory, though, so it only works from
+inside the clone.
 
-```bash
-pip install vgi-kalshi
-```
+Anywhere else, point the `LOCATION` at this repository directly. `uvx` fetches
+and caches the worker on first use — nothing to install, and the working
+directory stops mattering:
 
 ```sql
-ATTACH 'kalshi' (TYPE vgi, LOCATION 'vgi-kalshi');
+ATTACH 'kalshi' (TYPE vgi,
+  LOCATION 'uvx --from git+https://github.com/Query-farm/vgi-kalshi vgi-kalshi');
+```
+
+Pin a tag for a deployment, so the worker cannot change under you:
+
+```sql
+ATTACH 'kalshi' (TYPE vgi,
+  LOCATION 'uvx --from git+https://github.com/Query-farm/vgi-kalshi@v1.0.0 vgi-kalshi');
+```
+
+**This package is not published to PyPI, and is not intended to be** — install
+it from this repository. Its *dependencies* are all published, so `uvx` resolves
+them normally.
+
+To run the worker as a server and attach to a URL instead, `vgi-kalshi-http` is
+the HTTP entry point:
+
+```sql
+ATTACH 'kalshi' (TYPE vgi, LOCATION 'http://localhost:8000');
 ```
 
 ### Developing
