@@ -39,6 +39,11 @@ def _name(requirement: str) -> str:
 
 
 @pytest.fixture(scope="module")
+def project() -> dict:
+    return tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]
+
+
+@pytest.fixture(scope="module")
 def project_dependencies() -> set[str]:
     data = tomllib.loads((ROOT / "pyproject.toml").read_text())
     return {_name(spec) for spec in data["project"]["dependencies"]}
@@ -91,3 +96,41 @@ class TestTransport:
 
     def test_gzip_is_still_offered_as_a_fallback(self) -> None:
         assert "gzip" in self._request_headers()["accept-encoding"]
+
+
+class TestLicenseMetadata:
+    """The MIT declaration has to survive in the two forms tools actually read.
+
+    Both have been wrong at once. GitHub classified the repository as license
+    "Other" because a trailing paragraph in LICENSE pushed the file past what
+    licensee will match, and the built metadata carried a PEP 639
+    `License-Expression` *and* a deprecated license classifier, which is the
+    combination `twine` rejects.
+    """
+
+    def test_license_is_an_spdx_expression(self, project: dict) -> None:
+        assert project["license"] == "MIT"
+
+    def test_no_deprecated_license_classifier(self, project: dict) -> None:
+        """PEP 639: license classifiers are deprecated once an expression is set."""
+        offenders = [c for c in project.get("classifiers", []) if c.startswith("License ::")]
+        assert offenders == [], (
+            f'remove {offenders} — `license = "MIT"` already emits License-Expression, '
+            "and carrying both is what packaging tools reject"
+        )
+
+    def test_license_file_is_bare_mit(self) -> None:
+        """Anything appended after the MIT text breaks GitHub's detection.
+
+        The Kalshi data-terms carve-out lives in NOTICE for exactly this reason.
+        """
+        text = (ROOT / "LICENSE").read_text()
+        assert text.startswith("MIT License")
+        assert "Query Farm LLC" in text
+        assert text.rstrip().endswith("SOFTWARE.")
+
+    def test_carve_out_survives_in_notice(self) -> None:
+        """Moving it out of LICENSE must not have dropped it."""
+        notice = (ROOT / "NOTICE").read_text()
+        assert "kalshi.com/terms" in notice
+        assert "MIT License" in notice
