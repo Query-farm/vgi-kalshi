@@ -657,7 +657,7 @@ _KALSHI_CATALOG = Catalog(
     tags=_CATALOG_TAGS,
     schemas=[
         Schema(
-            name="main",
+            path=["main"],
             comment="Kalshi public market data — no credentials required",
             tags=_SCHEMA_TAGS,
             functions=list(_FUNCTIONS),

@@ -67,6 +67,37 @@ class TestScriptHeaders:
         assert extra == set(), f"{script} declares dependencies the project does not: {sorted(extra)}"
 
 
+def _vgi_python_requirements() -> dict[str, str]:
+    """Every place a `vgi-python` requirement is declared, keyed by where."""
+    data = tomllib.loads((ROOT / "pyproject.toml").read_text())
+    sources = {"pyproject dependencies": data["project"]["dependencies"]}
+    for extra, specs in data["project"].get("optional-dependencies", {}).items():
+        sources[f"pyproject [{extra}]"] = specs
+    for script in SCRIPTS:
+        match = _BLOCK.search((ROOT / script).read_text())
+        assert match is not None
+        body = "".join(line.removeprefix("# ").removeprefix("#") for line in match.group(1).splitlines(True))
+        sources[script] = tomllib.loads(body)["dependencies"]
+    return {where: spec for where, specs in sources.items() for spec in specs if _name(spec) == "vgi-python"}
+
+
+class TestFilterEngine:
+    """vgi-python binds pushed-down filters with an in-process DuckDB engine.
+
+    It hard-depends on neither `haybarn` nor `duckdb`, so the worker has to ask
+    for one. The offline suite cannot notice when it doesn't: the dev group
+    installs `duckdb`, which vgi-python accepts as a fallback, so only a worker
+    launched from its own environment fails — at the first filtered scan.
+    """
+
+    @pytest.mark.parametrize("where", sorted(_vgi_python_requirements()))
+    def test_vgi_python_pulls_in_an_engine(self, where: str) -> None:
+        spec = _vgi_python_requirements()[where]
+        bracket = re.search(r"\[([^\]]*)\]", spec)
+        extras = {e.strip() for e in bracket.group(1).split(",")} if bracket else set()
+        assert "haybarn" in extras, f"{where}: {spec!r} lacks the `haybarn` extra"
+
+
 class TestTransport:
     """Content encoding is negotiated by what is installed, not by our code.
 

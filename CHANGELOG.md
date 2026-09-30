@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+### Operational
+
+- Requires `vgi-python>=0.37.3` and `vgi-rpc>=0.47.2` (were 0.31.0 and
+  0.44.1), in `pyproject.toml` and in both entry-point scripts' PEP-723
+  headers. vgi-python now identifies a schema by its `path` rather than a
+  `name`, so the catalog declares `Schema(path=["main"])`; under the old
+  keyword the worker died at import. The SQL surface is unchanged.
+
+- Depends on `vgi-python[haybarn]`. vgi-python 0.37 binds a pushed-down `WHERE`
+  with an in-process DuckDB engine and depends on none itself, so without it
+  every filtered scan failed with "No DuckDB-compatible engine is installed".
+  The offline suite passed regardless — its dev group installs `duckdb`, which
+  vgi-python accepts as a fallback — so a packaging test now requires the extra
+  on every `vgi-python` requirement.
+
 ## 1.1.0
 
 ### Surface

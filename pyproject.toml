@@ -20,7 +20,11 @@ classifiers = [
 ]
 requires-python = ">=3.13"
 dependencies = [
-    "vgi-python[http]>=0.31.0",
+    # `haybarn` is not optional: vgi-python binds a pushed-down WHERE clause with
+    # an in-process DuckDB engine, and without one every filtered scan fails at
+    # runtime with "No DuckDB-compatible engine is installed". The offline tests
+    # cannot see this, because the dev group brings in `duckdb` as a fallback.
+    "vgi-python[http,haybarn]>=0.37.3",
     "httpx>=0.27",
     # Brotli lets httpx advertise `br`, which Kalshi honours. The series
     # catalog is 15.6 MB of JSON: brotli ships it in 1.35 MB against gzip's
@@ -33,7 +37,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-serve = ["vgi-python[http,oauth]>=0.31.0", "vgi-rpc[sentry]>=0.44.1"]
+serve = ["vgi-python[http,haybarn,oauth]>=0.37.3", "vgi-rpc[sentry]>=0.47.2"]
 
 [dependency-groups]
 dev = [
