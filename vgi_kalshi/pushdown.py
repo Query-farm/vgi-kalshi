@@ -75,31 +75,6 @@ def epoch_bounds(params: ProcessParams[Any], column: str) -> tuple[int | None, i
     return low, high
 
 
-def _widen_decimals(batch: pa.RecordBatch) -> pa.RecordBatch:
-    """Widen decimal columns so an integer literal can be compared against them.
-
-    Arrow refuses ``decimal128(18, 2) > 999999999`` outright — *"Precision is
-    not great enough for the result. It should be at least 21"* — because the
-    comparison's result type does not fit. Every money and count column here is
-    a decimal and every SQL literal is an integer, so this is not an edge case:
-    it is what ``WHERE volume_24h_fp > 100`` does.
-
-    Widening to ``decimal128(38, scale)`` makes room for the comparison and is
-    exact — the scale is unchanged, so no value is rounded. The widened batch is
-    used only to compute the mask; the rows returned are the originals.
-    """
-    fields: list[pa.Field] = []
-    columns: list[pa.Array] = []
-    for index, field in enumerate(batch.schema):
-        column = batch.column(index)
-        if pa.types.is_decimal(field.type) and field.type.precision < 38:
-            wider = pa.decimal128(38, field.type.scale)
-            column, field = column.cast(wider), field.with_type(wider)
-        fields.append(field)
-        columns.append(column)
-    return pa.RecordBatch.from_arrays(columns, schema=pa.schema(fields))
-
-
 def build_filtered(
     params: ProcessParams[Any],
     rows: Sequence[dict[str, Any]],
@@ -149,7 +124,7 @@ def build_filtered(
         return batch_from_rows(rows, params.output_schema), list(parent_rows or [])
 
     batch = batch_from_rows(rows, params.output_schema)
-    mask = filters.evaluate(_widen_decimals(batch))
+    mask = filters.evaluate(batch)
     projected = pc.filter(batch, mask)
     if parent_rows is None:
         return projected, []

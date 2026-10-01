@@ -25,16 +25,14 @@ SERIES = "KXBTCD"
 
 @pytest.fixture(scope="module")
 def con() -> Iterator[Any]:
-    """A DuckDB connection with the worker attached.
+    """A Haybarn connection with the worker attached.
 
-    Unsigned extensions are allowed because the vgi extension ships from the
-    community repository unsigned; this is a test process, not a deployment.
+    Haybarn is Query Farm's DuckDB distribution and ships the vgi extension, so
+    nothing is fetched from the community repository at test time.
     """
-    duckdb = pytest.importorskip("duckdb")
-    connection = duckdb.connect(config={"allow_unsigned_extensions": "true"})
+    haybarn = pytest.importorskip("haybarn")
+    connection = haybarn.connect()
     try:
-        connection.execute("INSTALL vgi FROM community")
-        connection.execute("LOAD vgi")
         connection.execute("ATTACH 'kalshi' (TYPE vgi, LOCATION 'uv run kalshi_worker.py')")
     except Exception as exc:  # pragma: no cover - environment, not the worker
         pytest.skip(f"cannot attach the worker: {exc}")

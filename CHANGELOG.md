@@ -17,6 +17,20 @@
   vgi-python accepts as a fallback — so a packaging test now requires the extra
   on every `vgi-python` requirement.
 
+### Fixed
+
+- A `WHERE` on any decimal column (`volume_24h_fp > 100`, `yes_bid_dollars > 0`)
+  failed the scan with "referenced column ... changed type before evaluation".
+  The worker widened decimals to `decimal128(38, s)` before evaluating pushed
+  filters, a workaround for Arrow's comparison kernel; vgi-python 0.37
+  evaluates filters with DuckDB, which needs no widening and rejects a batch
+  whose types differ from the declared schema. The workaround is gone.
+
+- The SQL end-to-end suite attaches through Haybarn, which ships the vgi
+  extension, instead of `INSTALL vgi FROM community` — that returned 404 for
+  every DuckDB 1.5.x, so all 20 tests had been skipping, in CI's `live.yml` too.
+  Running them is what found the decimal bug above.
+
 ## 1.1.0
 
 ### Surface
