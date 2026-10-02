@@ -514,6 +514,17 @@ CREATE SECRET kalshi (
 );
 ```
 
+The secret can have any name, or none. If you hold both a production and a demo
+key, scope each one; the secret whose `SCOPE` is the longest prefix of the API base
+URL (`KALSHI_BASE_URL`) is used, and an unscoped secret is the fallback:
+
+```sql
+CREATE SECRET kalshi_demo (
+    TYPE kalshi, key_id '...', private_key '...',
+    SCOPE 'https://demo-api.kalshi.co'
+);
+```
+
 `private_key` is declared redacted, so `duckdb_secrets()` masks it. Requests are
 then signed per Kalshi's scheme — RSA-PSS over SHA-256 of
 `timestamp + METHOD + /trade-api/v2 + path`, base64 — and re-signed on every

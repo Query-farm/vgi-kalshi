@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Fixed
+
+- A `kalshi` secret was only used if it was literally named `kalshi`. The
+  framework keys resolved secrets by secret *name*, and the worker looked its
+  secret up by *type*, so `CREATE SECRET my_key (TYPE kalshi, ...)` — and the
+  unnamed form, which DuckDB calls `__default_kalshi` and which the
+  `auth => 'required'` error message itself suggested — was ignored. Under the
+  default `auth => 'auto'` the query then ran unsigned without a word. Secrets
+  are now selected by type, whatever their name.
+- When several `kalshi` secrets exist, `SCOPE` now chooses between them by the
+  API base URL, so a production and a demo key can coexist.
+
 ### Operational
 
 - Requires `vgi-python>=0.37.3` and `vgi-rpc>=0.47.2` (were 0.31.0 and

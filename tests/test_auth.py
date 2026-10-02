@@ -8,11 +8,14 @@ without needing a Kalshi account.
 from __future__ import annotations
 
 import base64
+from typing import Any
 
 import httpx
+import pyarrow as pa
 import pytest
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
+from vgi.table_function import ResolvedSecrets
 
 from vgi_kalshi import auth, kalshi_api
 
@@ -116,6 +119,69 @@ class TestSecretResolution:
         """`duckdb_secrets()` must mask the key; the field metadata is what does it."""
         field = auth.SECRET_SPEC.schema.field(auth.PRIVATE_KEY)
         assert (field.metadata or {}).get(b"redact") == b"true"
+
+
+class TestSecretSelectionByType:
+    """Resolved secrets are keyed by secret *name*, not by type.
+
+    The worker used to look its secret up by the type string, which only found
+    a secret literally named ``kalshi``. ``CREATE SECRET my_key (TYPE kalshi,
+    ...)`` — or the unnamed form, which DuckDB calls ``__default_kalshi`` and
+    which the 'required' error message itself suggested — was ignored, and in
+    ``auto`` mode the query silently ran unsigned.
+    """
+
+    @staticmethod
+    def _secret(pem: str, *, key_id: str = "k", type_: str = "kalshi", scope: str = "") -> dict[str, Any]:
+        return {
+            auth.KEY_ID: pa.scalar(key_id),
+            auth.PRIVATE_KEY: pa.scalar(pem),
+            "type": pa.scalar(type_),
+            "scope": pa.scalar(scope),
+        }
+
+    @pytest.mark.parametrize("name", ["my_key", "__default_kalshi", "kalshi"])
+    def test_found_whatever_it_is_named(self, keypair: tuple[str, rsa.RSAPublicKey], name: str) -> None:
+        pem, _ = keypair
+        secrets = ResolvedSecrets({name: self._secret(pem)})
+        creds = auth.from_secrets(secrets, kalshi_api.DEFAULT_BASE_URL)
+        assert creds is not None and creds.key_id == "k"
+
+    def test_required_mode_accepts_a_differently_named_secret(
+        self, keypair: tuple[str, rsa.RSAPublicKey]
+    ) -> None:
+        pem, _ = keypair
+        secrets = ResolvedSecrets({"my_key": self._secret(pem)})
+        assert auth.for_call(secrets, b"required") is not None
+
+    def test_scope_separates_demo_and_production_keys(self, keypair: tuple[str, rsa.RSAPublicKey]) -> None:
+        pem, _ = keypair
+        secrets = ResolvedSecrets(
+            {
+                "prod": self._secret(pem, key_id="prod-key"),
+                "demo": self._secret(pem, key_id="demo-key", scope="https://demo-api.kalshi.co"),
+            }
+        )
+        assert auth.from_secrets(secrets, kalshi_api.DEMO_BASE_URL).key_id == "demo-key"
+        assert auth.from_secrets(secrets, kalshi_api.DEFAULT_BASE_URL).key_id == "prod-key"
+
+    def test_for_call_scopes_by_the_configured_base_url(
+        self, keypair: tuple[str, rsa.RSAPublicKey], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        pem, _ = keypair
+        monkeypatch.setenv("KALSHI_BASE_URL", kalshi_api.DEMO_BASE_URL)
+        secrets = ResolvedSecrets(
+            {
+                "prod": self._secret(pem, key_id="prod-key"),
+                "demo": self._secret(pem, key_id="demo-key", scope="https://demo-api.kalshi.co"),
+            }
+        )
+        assert auth.for_call(secrets, b"auto").key_id == "demo-key"
+
+    def test_secrets_of_other_types_are_ignored(self, keypair: tuple[str, rsa.RSAPublicKey]) -> None:
+        pem, _ = keypair
+        secrets = ResolvedSecrets({"s3": self._secret(pem, type_="s3")})
+        assert auth.from_secrets(secrets, kalshi_api.DEFAULT_BASE_URL) is None
 
 
 class TestAttachMode:
