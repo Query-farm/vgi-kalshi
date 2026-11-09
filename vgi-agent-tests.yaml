@@ -1,0 +1,108 @@
+# Private graders for the agent-suitability suite in `vgi.agent_test_tasks`.
+#
+# The catalog tag publishes only each task's name and prompt, so an agent under
+# test never sees the reference answer. vgi-lint discovers this file by name and
+# merges these fields back in, by task name, when it simulates the suite.
+
+tasks:
+- name: find_a_series
+  reference_sql: >-
+    SELECT ticker, title FROM kalshi.main.series WHERE category = 'Crypto' ORDER BY ticker LIMIT 10
+  success_criteria: Returns series tickers from the Crypto category.
+  unordered: true
+- name: open_markets_in_a_series
+  reference_sql: >-
+    SELECT ticker, yes_bid_dollars FROM kalshi.main.markets('KXBTCD') WHERE status = 'active' ORDER BY
+    ticker
+  success_criteria: >-
+    Uses the markets() function with series KXBTCD and correctly identifies open markets — either by filtering
+    status => 'open' or by the column value 'active'. Filtering the column for 'open', or passing 'active'
+    as the argument, is wrong.
+  unordered: true
+- name: price_history
+  reference_sql: >-
+    SELECT c.end_period_ts, c.price_close_dollars FROM (SELECT ticker, series_ticker FROM kalshi.main.markets('KXBTCD')
+    WHERE status = 'active' ORDER BY volume_24h_fp DESC LIMIT 1) m, LATERAL kalshi.main.candlesticks(m.series_ticker,
+    m.ticker, period_interval => 60) c ORDER BY c.end_period_ts
+  success_criteria: >-
+    Passes BOTH a series ticker and a market ticker to candlesticks(), and picks the market by volume_24h_fp.
+- name: find_a_resolution_date
+  reference_sql: >-
+    SELECT event_ticker, strike_date, settlement_sources FROM kalshi.main.events('KXBTCD') ORDER BY strike_date
+    LIMIT 1
+  success_criteria: >-
+    Uses events() rather than scanning markets, and reads strike_date and settlement_sources.
+- name: single_market_quote
+  reference_sql: >-
+    SELECT ticker, yes_bid_dollars, yes_ask_dollars FROM kalshi.main.market((SELECT ticker FROM kalshi.main.markets('KXBTCD',
+    status => 'open') LIMIT 1))
+  success_criteria: >-
+    Uses the single-market lookup market() for the point read rather than paging the whole series again.
+- name: recent_prints
+  reference_sql: >-
+    SELECT t.created_time, t.taker_side, t.yes_price_dollars, t.count_fp FROM (SELECT ticker FROM kalshi.main.markets('KXBTCD',
+    status => 'open') LIMIT 1) m, LATERAL kalshi.main.trades(m.ticker, max_rows => 10) t ORDER BY t.created_time
+    DESC
+  success_criteria: >-
+    Uses trades() for executed prints (not candlesticks or quotes) and reads taker_side.
+  unordered: true
+- name: count_the_catalog
+  reference_sql: >-
+    SELECT count(*) AS total, count(*) FILTER (WHERE category = 'Crypto') AS crypto FROM kalshi.main.all_series()
+  success_criteria: >-
+    Counts the series catalog, through either the series table or the all_series function behind it.
+- name: is_the_market_open
+  reference_sql: >-
+    SELECT description, exchange_active, trading_active FROM kalshi.main.exchange_status ORDER BY exchange_index
+  success_criteria: >-
+    Uses exchange_status (or the all_exchange_status function behind it) and reports per-venue rather
+    than treating the exchange as a single switch.
+  check_sql: >-
+    SELECT count(*) = (SELECT count(*) FROM kalshi.main.all_exchange_status()) FROM kalshi.main.exchange_status
+  unordered: true
+- name: which_side_of_the_archive
+  reference_sql: SELECT market_settled_ts, trades_created_ts FROM kalshi.main.historical_cutoff
+  check_sql: SELECT count(*) = 1 FROM kalshi.main.all_historical_cutoff()
+  success_criteria: >-
+    Finds the cutoff table rather than guessing a date, and reports the timestamps as the boundary between
+    the live and historical functions.
+- name: how_it_settled
+  reference_sql: >-
+    SELECT ticker, result, settlement_value_dollars FROM kalshi.main.historical_markets('KXBTCD') ORDER
+    BY close_time DESC LIMIT 10
+  success_criteria: >-
+    Uses historical_markets, not markets() — settled markets have been archived out of the live endpoint,
+    which returns nothing for them rather than erroring.
+  unordered: true
+- name: price_before_settlement
+  reference_sql:
+  - >-
+    SELECT c.end_period_ts, c.price_close_dollars FROM (SELECT ticker FROM kalshi.main.historical_markets('KXBTCD')
+    ORDER BY close_time DESC LIMIT 1) m, LATERAL kalshi.main.historical_candlesticks(m.ticker, period_interval
+    => 1440) c ORDER BY c.end_period_ts
+  - >-
+    SELECT t.created_time, t.yes_price_dollars FROM (SELECT ticker FROM kalshi.main.historical_markets('KXBTCD')
+    ORDER BY close_time DESC LIMIT 1) m, LATERAL kalshi.main.historical_trades(m.ticker, max_rows => 20)
+    t ORDER BY t.created_time DESC
+  success_criteria: >-
+    Uses the historical candlestick and trade functions for an archived market, and passes only the market
+    ticker to historical_candlesticks — unlike the live one, it is not scoped by series.
+  unordered: true
+- name: how_is_it_decided
+  reference_sql:
+  - >-
+    SELECT event_ticker, title, strike_date FROM kalshi.main.event((SELECT event_ticker FROM kalshi.main.events('KXBTCD')
+    ORDER BY strike_date LIMIT 1))
+  - >-
+    SELECT settlement_source_name, settlement_source_url FROM kalshi.main.event_metadata((SELECT event_ticker
+    FROM kalshi.main.events('KXBTCD') ORDER BY strike_date LIMIT 1))
+  success_criteria: >-
+    Finds the settlement source via event_metadata rather than guessing from the title, and reports the
+    event's strike date.
+  unordered: true
+- name: book_depth
+  reference_sql: >-
+    SELECT o.side, sum(o.count_fp) FROM kalshi.main.markets('KXBTCD', status => 'open') m, LATERAL kalshi.main.orderbook(m.ticker)
+    o GROUP BY o.side
+  success_criteria: Uses orderbook() and aggregates count_fp by side.
+  unordered: true

@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.13"
 
 [[package]]
@@ -845,9 +845,9 @@ requires-dist = [
     { name = "brotli", specifier = ">=1.1" },
     { name = "cryptography", specifier = ">=42" },
     { name = "httpx", specifier = ">=0.27" },
-    { name = "vgi-python", extras = ["haybarn", "http"], specifier = ">=0.37.3" },
-    { name = "vgi-python", extras = ["haybarn", "http", "oauth"], marker = "extra == 'serve'", specifier = ">=0.37.3" },
-    { name = "vgi-rpc", extras = ["sentry"], marker = "extra == 'serve'", specifier = ">=0.47.2" },
+    { name = "vgi-python", extras = ["haybarn", "http"], specifier = ">=0.50.0" },
+    { name = "vgi-python", extras = ["haybarn", "http", "oauth"], marker = "extra == 'serve'", specifier = ">=0.50.0" },
+    { name = "vgi-rpc", extras = ["sentry"], marker = "extra == 'serve'", specifier = ">=0.53.1" },
 ]
 provides-extras = ["serve"]
 
@@ -861,19 +861,20 @@ dev = [
 
 [[package]]
 name = "vgi-python"
-version = "0.37.3"
+version = "0.50.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "click" },
     { name = "httpx2" },
     { name = "platformdirs" },
     { name = "pyarrow" },
+    { name = "pycryptodome" },
     { name = "typer" },
     { name = "vgi-rpc" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/2d/65/88a3a15ce0ce5ec8b6e0e60db4288cc7f7c613b96dcc43f6d86526d79dfc/vgi_python-0.37.3.tar.gz", hash = "sha256:bc9a08a90dca7f0234d41ada3b3f322765082b233ce259d63f9b3e387eebecd9", size = 4502452, upload-time = "2026-09-27T17:56:02.947Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/1f/65/02db3e8e1fde17bf2d9b080bf6e20c4e6ed2db674efbfc80d0bc1009acfb/vgi_python-0.50.0.tar.gz", hash = "sha256:c1481e064dd7301ad88dd803de0188d29abf25445a80fff041db90e40fdf99e8", size = 5551678, upload-time = "2026-11-08T22:02:43.248Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/89/df/d0f618245a62bd76aba5ce4f75af6ebcf06461b214dea82efcb787fd91ed/vgi_python-0.37.3-py3-none-any.whl", hash = "sha256:7131192227bf08a37c57492e4eef43b375160a575d64be3488c432394e0fce13", size = 1219283, upload-time = "2026-09-27T17:56:00.654Z" },
+    { url = "https://files.pythonhosted.org/packages/c8/80/48affe2985a7a7514529b050af290f005d0b4ef7fd9491977f4814ee9f27/vgi_python-0.50.0-py3-none-any.whl", hash = "sha256:69949ca5ad3d6c926e8edb86d92b677c6670caf4e55e499576ce8cb8d60d0534", size = 1442720, upload-time = "2026-11-08T22:02:40.855Z" },
 ]
 
 [package.optional-dependencies]
@@ -889,7 +890,7 @@ oauth = [
 
 [[package]]
 name = "vgi-rpc"
-version = "0.47.2"
+version = "0.53.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "docstring-parser" },
@@ -897,9 +898,9 @@ dependencies = [
     { name = "pywin32", marker = "sys_platform == 'win32'" },
     { name = "tzdata", marker = "sys_platform == 'win32'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/58/0a/c38719a918a3e5e8e8f9f180c09b1f2d8c70c53e98351471122786b2fe55/vgi_rpc-0.47.2.tar.gz", hash = "sha256:ec5d9a0425509b8f6180cf4fa1634e6bf6ad88a00faae117ea7ef2a3b4d44510", size = 1493865, upload-time = "2026-09-27T17:48:42.044Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/01/87/8d17789a0fc23f5e735abf5e6eb18cbbefb3d3dd6d05f76def9472c6e324/vgi_rpc-0.53.1.tar.gz", hash = "sha256:d149c485285f54ed58dfaa3c941c6b9444bee1dc2090d388a3756518f5af10fb", size = 1647405, upload-time = "2026-11-05T16:18:03.668Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/83/ef/cdb36d2bf1ed827931238ce16145bbfc15ea460b88c62b048fdc51d4ba90/vgi_rpc-0.47.2-py3-none-any.whl", hash = "sha256:92e05dc90d1724ee345b3fbcfcb4d44925dcd8132d18d9c8f5abe0ba372edbd7", size = 696129, upload-time = "2026-09-27T17:48:39.46Z" },
+    { url = "https://files.pythonhosted.org/packages/3e/3e/7ae93da324ac563294e126425a8c9ba1149a65ccab799ab7f5cba0481c3f/vgi_rpc-0.53.1-py3-none-any.whl", hash = "sha256:84d4135835bedf8038ee9d766982bcbd84715dadba4d7f01f3e6bc9c276e3520", size = 765119, upload-time = "2026-11-05T16:18:01.389Z" },
 ]
 
 [package.optional-dependencies]

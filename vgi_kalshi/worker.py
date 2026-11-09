@@ -22,7 +22,7 @@ from typing import Any
 
 import pyarrow as pa
 from vgi import Worker
-from vgi.catalog import Catalog, ReadOnlyCatalogInterface, Schema
+from vgi.catalog import Catalog, ReadOnlyCatalogInterface, Schema, constraint_record
 from vgi.catalog.attach_option import AttachOptionSpec
 from vgi.catalog.catalog_interface import AttachOpaqueData, CatalogAttachResult, CatalogInfo
 from vgi.catalog.descriptors import Table
@@ -162,63 +162,31 @@ _EXECUTABLE_EXAMPLES = json.dumps(
 #: the catalog metadata alone. They are written to exercise the things this
 #: worker is easy to get wrong — the two status vocabularies, and the fact that
 #: candlesticks needs a series ticker as well as a market ticker.
+#: Only names and prompts are published: the graders (reference SQL, success
+#: criteria) live in vgi-agent-tests.yaml, which vgi-lint merges back in by name.
 _AGENT_TEST_TASKS = json.dumps(
     [
         {
             "name": "find_a_series",
             "prompt": "Which Kalshi series cover crypto? List a few of their tickers and titles.",
-            "reference_sql": (
-                "SELECT ticker, title FROM kalshi.main.series WHERE category = 'Crypto' "
-                "ORDER BY ticker LIMIT 10"
-            ),
-            "success_criteria": "Returns series tickers from the Crypto category.",
-            "unordered": True,
         },
         {
             "name": "open_markets_in_a_series",
             "prompt": (
-                "For the Kalshi series KXBTCD, which markets are currently open for trading, "
-                "and what is the best yes bid on each?"
+                "For the Kalshi series KXBTCD, which markets are currently open for trading, and what"
+                " is the best yes bid on each?"
             ),
-            "reference_sql": (
-                "SELECT ticker, yes_bid_dollars FROM kalshi.main.markets('KXBTCD') "
-                "WHERE status = 'active' ORDER BY ticker"
-            ),
-            "success_criteria": (
-                "Uses the markets() function with series KXBTCD and correctly identifies open "
-                "markets — either by filtering status => 'open' or by the column value 'active'. "
-                "Filtering the column for 'open', or passing 'active' as the argument, is wrong."
-            ),
-            "unordered": True,
         },
         {
             "name": "price_history",
             "prompt": (
-                "Chart the last day of hourly closing prices for the most actively traded open "
-                "market in the Kalshi series KXBTCD."
-            ),
-            "reference_sql": (
-                "SELECT c.end_period_ts, c.price_close_dollars FROM ("
-                "SELECT ticker, series_ticker FROM kalshi.main.markets('KXBTCD') "
-                "WHERE status = 'active' ORDER BY volume_24h_fp DESC LIMIT 1) m, "
-                "LATERAL kalshi.main.candlesticks(m.series_ticker, m.ticker, "
-                "period_interval => 60) c ORDER BY c.end_period_ts"
-            ),
-            "success_criteria": (
-                "Passes BOTH a series ticker and a market ticker to candlesticks(), and picks "
-                "the market by volume_24h_fp."
+                "Chart the last day of hourly closing prices for the most actively traded open market"
+                " in the Kalshi series KXBTCD."
             ),
         },
         {
             "name": "find_a_resolution_date",
-            "prompt": ("When does the next Kalshi KXBTCD event resolve, and what source settles it?"),
-            "reference_sql": (
-                "SELECT event_ticker, strike_date, settlement_sources "
-                "FROM kalshi.main.events('KXBTCD') ORDER BY strike_date LIMIT 1"
-            ),
-            "success_criteria": (
-                "Uses events() rather than scanning markets, and reads strike_date and settlement_sources."
-            ),
+            "prompt": "When does the next Kalshi KXBTCD event resolve, and what source settles it?",
         },
         {
             "name": "single_market_quote",
@@ -226,154 +194,58 @@ _AGENT_TEST_TASKS = json.dumps(
                 "Look up the current bid and ask for one specific Kalshi market, given only its "
                 "ticker: pick any open market in KXBTCD and quote it by ticker."
             ),
-            "reference_sql": (
-                "SELECT ticker, yes_bid_dollars, yes_ask_dollars FROM kalshi.main.market("
-                "(SELECT ticker FROM kalshi.main.markets('KXBTCD', status => 'open') LIMIT 1))"
-            ),
-            "success_criteria": (
-                "Uses the single-market lookup market() for the point read rather than paging "
-                "the whole series again."
-            ),
         },
         {
             "name": "recent_prints",
             "prompt": (
-                "What were the last few trades on any open market in the Kalshi series KXBTCD, "
-                "and which side was the aggressor on?"
+                "What were the last few trades on any open market in the Kalshi series KXBTCD, and "
+                "which side was the aggressor on?"
             ),
-            "reference_sql": (
-                "SELECT t.created_time, t.taker_side, t.yes_price_dollars, t.count_fp FROM ("
-                "SELECT ticker FROM kalshi.main.markets('KXBTCD', status => 'open') LIMIT 1) m, "
-                "LATERAL kalshi.main.trades(m.ticker, max_rows => 10) t "
-                "ORDER BY t.created_time DESC"
-            ),
-            "success_criteria": (
-                "Uses trades() for executed prints (not candlesticks or quotes) and reads taker_side."
-            ),
-            "unordered": True,
         },
         {
             "name": "count_the_catalog",
             "prompt": "How many series does Kalshi list in total, and how many are about crypto?",
-            "reference_sql": (
-                "SELECT count(*) AS total, count(*) FILTER (WHERE category = 'Crypto') AS crypto "
-                "FROM kalshi.main.all_series()"
-            ),
-            "success_criteria": (
-                "Counts the series catalog, through either the series table or the all_series "
-                "function behind it."
-            ),
         },
         {
             "name": "is_the_market_open",
             "prompt": (
                 "Is Kalshi open for trading right now? If some venues are open and others are not, say which."
             ),
-            "reference_sql": (
-                "SELECT description, exchange_active, trading_active "
-                "FROM kalshi.main.exchange_status ORDER BY exchange_index"
-            ),
-            "success_criteria": (
-                "Uses exchange_status (or the all_exchange_status function behind it) and "
-                "reports per-venue rather than treating the exchange as a single switch."
-            ),
-            "check_sql": (
-                "SELECT count(*) = (SELECT count(*) FROM kalshi.main.all_exchange_status()) "
-                "FROM kalshi.main.exchange_status"
-            ),
-            "unordered": True,
         },
         {
             "name": "which_side_of_the_archive",
             "prompt": (
-                "Kalshi moves older data into a historical archive. As of now, how far back do "
-                "the live endpoints go before you have to use the historical ones?"
-            ),
-            "reference_sql": (
-                "SELECT market_settled_ts, trades_created_ts FROM kalshi.main.historical_cutoff"
-            ),
-            "check_sql": "SELECT count(*) = 1 FROM kalshi.main.all_historical_cutoff()",
-            "success_criteria": (
-                "Finds the cutoff table rather than guessing a date, and reports the timestamps "
-                "as the boundary between the live and historical functions."
+                "Kalshi moves older data into a historical archive. As of now, how far back do the "
+                "live endpoints go before you have to use the historical ones?"
             ),
         },
         {
             "name": "how_it_settled",
             "prompt": (
-                "For the Kalshi series KXBTCD, find some markets that have already settled and "
-                "say what each one paid out."
+                "For the Kalshi series KXBTCD, find some markets that have already settled and say "
+                "what each one paid out."
             ),
-            "reference_sql": (
-                "SELECT ticker, result, settlement_value_dollars "
-                "FROM kalshi.main.historical_markets('KXBTCD') "
-                "ORDER BY close_time DESC LIMIT 10"
-            ),
-            "success_criteria": (
-                "Uses historical_markets, not markets() — settled markets have been archived "
-                "out of the live endpoint, which returns nothing for them rather than erroring."
-            ),
-            "unordered": True,
         },
         {
             "name": "price_before_settlement",
             "prompt": (
-                "Take any settled market in the Kalshi series KXBTCD. How did its price move "
-                "over its final days, and what were the last trades on it?"
+                "Take any settled market in the Kalshi series KXBTCD. How did its price move over its"
+                " final days, and what were the last trades on it?"
             ),
-            "reference_sql": [
-                "SELECT c.end_period_ts, c.price_close_dollars FROM ("
-                "SELECT ticker FROM kalshi.main.historical_markets('KXBTCD') "
-                "ORDER BY close_time DESC LIMIT 1) m, "
-                "LATERAL kalshi.main.historical_candlesticks(m.ticker, period_interval => 1440) c "
-                "ORDER BY c.end_period_ts",
-                "SELECT t.created_time, t.yes_price_dollars FROM ("
-                "SELECT ticker FROM kalshi.main.historical_markets('KXBTCD') "
-                "ORDER BY close_time DESC LIMIT 1) m, "
-                "LATERAL kalshi.main.historical_trades(m.ticker, max_rows => 20) t "
-                "ORDER BY t.created_time DESC",
-            ],
-            "success_criteria": (
-                "Uses the historical candlestick and trade functions for an archived market, "
-                "and passes only the market ticker to historical_candlesticks — unlike the live "
-                "one, it is not scoped by series."
-            ),
-            "unordered": True,
         },
         {
             "name": "how_is_it_decided",
             "prompt": (
-                "Pick any event in the Kalshi series KXBTCD. What question does it ask, when "
-                "does it resolve, and what source decides the outcome?"
+                "Pick any event in the Kalshi series KXBTCD. What question does it ask, when does it "
+                "resolve, and what source decides the outcome?"
             ),
-            "reference_sql": [
-                "SELECT event_ticker, title, strike_date FROM kalshi.main.event("
-                "(SELECT event_ticker FROM kalshi.main.events('KXBTCD') "
-                "ORDER BY strike_date LIMIT 1))",
-                "SELECT settlement_source_name, settlement_source_url "
-                "FROM kalshi.main.event_metadata("
-                "(SELECT event_ticker FROM kalshi.main.events('KXBTCD') "
-                "ORDER BY strike_date LIMIT 1))",
-            ],
-            "success_criteria": (
-                "Finds the settlement source via event_metadata rather than guessing from the "
-                "title, and reports the event's strike date."
-            ),
-            "unordered": True,
         },
         {
             "name": "book_depth",
             "prompt": (
-                "How much size is resting on each side of the book for any open market in the "
-                "Kalshi series KXBTCD?"
+                "How much size is resting on each side of the book for any open market in the Kalshi "
+                "series KXBTCD?"
             ),
-            "reference_sql": (
-                "SELECT o.side, sum(o.count_fp) FROM kalshi.main.markets("
-                "'KXBTCD', status => 'open') m, LATERAL kalshi.main.orderbook(m.ticker) o "
-                "GROUP BY o.side"
-            ),
-            "success_criteria": "Uses orderbook() and aggregates count_fp by side.",
-            "unordered": True,
         },
     ]
 )
@@ -420,6 +292,9 @@ _CATALOG_TAGS = {
     "provider": "kalshi",
     "domain": "prediction-markets",
     "vgi.title": "Kalshi Prediction Markets",
+    "vgi.subtitle": (
+        "Live and archived Kalshi prediction markets, with order books, prices, trades and settlements."
+    ),
     "vgi.source_url": SOURCE_URL,
     "vgi.author": "Query Farm LLC <hello@query.farm>",
     "vgi.copyright": (
@@ -643,7 +518,7 @@ _CUTOFF_DOCS = docs(
     extra={
         "provider": "kalshi",
         "domain": "prediction-markets",
-        "vgi.title": "Live / Archive Boundary",
+        "vgi.title": "Archive Boundary",
         "vgi.keywords": keywords("historical", "archive", "cutoff", "boundary", "settled"),
     },
 )
@@ -668,8 +543,26 @@ _KALSHI_CATALOG = Catalog(
                     comment="Every series on the exchange (small, slow-changing reference data)",
                     tags=_SERIES_DOCS,
                     column_comments=column_comments(SERIES_SCHEMA),
-                    primary_key=(("ticker",),),
-                    not_null=("ticker",),
+                    constraints=[
+                        constraint_record(
+                            ["main"],
+                            "series",
+                            "pk",
+                            "PRIMARY_KEY",
+                            [["ticker"]],
+                            enforcement="ENFORCED",
+                            validation="ALL_ROWS",
+                        ),
+                        constraint_record(
+                            ["main"],
+                            "series",
+                            "ticker_not_null",
+                            "NOT_NULL",
+                            [["ticker"]],
+                            enforcement="ENFORCED",
+                            validation="ALL_ROWS",
+                        ),
+                    ],
                     # Inlined so the planner does not have to ask. The catalog
                     # is one unpaginated response whose size moves slowly — it
                     # was ~13,600 rows when this was measured — so an estimate
@@ -683,8 +576,26 @@ _KALSHI_CATALOG = Catalog(
                     comment="Whether the exchange, and each venue within it, is open for trading",
                     tags=_EXCHANGE_STATUS_DOCS,
                     column_comments=column_comments(EXCHANGE_STATUS_SCHEMA),
-                    primary_key=(("exchange_index",),),
-                    not_null=("exchange_index",),
+                    constraints=[
+                        constraint_record(
+                            ["main"],
+                            "exchange_status",
+                            "pk",
+                            "PRIMARY_KEY",
+                            [["exchange_index"]],
+                            enforcement="ENFORCED",
+                            validation="ALL_ROWS",
+                        ),
+                        constraint_record(
+                            ["main"],
+                            "exchange_status",
+                            "exchange_index_not_null",
+                            "NOT_NULL",
+                            [["exchange_index"]],
+                            enforcement="ENFORCED",
+                            validation="ALL_ROWS",
+                        ),
+                    ],
                     cardinality_estimate=4,
                 ),
                 Table(

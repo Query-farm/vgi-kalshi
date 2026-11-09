@@ -29,3 +29,16 @@ function and a table cannot share one name in a schema, so the scan takes the \
 "kalshi.main.historical_cutoff" = { ignore = [
   { code = "VGI807", kind = "domain-exemption", reason = "single-row snapshot; the row has no identity beyond its own contents" },
 ] }
+
+# A market row is 34 columns wide (35 archived), many of them structs with their
+# own documented fields, and vgi.result_columns_schema is its static result
+# shape. Truncating it would hide columns from an agent; DESCRIBE and duckdb_columns() carry the same shape at full length.
+"kalshi.main.markets" = { ignore = [
+  { code = "VGI417", kind = "domain-exemption", reason = "34-column market row; the result shape cannot be shortened without dropping columns" },
+] }
+"kalshi.main.market" = { ignore = [
+  { code = "VGI417", kind = "domain-exemption", reason = "34-column market row; the result shape cannot be shortened without dropping columns" },
+] }
+"kalshi.main.historical_markets" = { ignore = [
+  { code = "VGI417", kind = "domain-exemption", reason = "35-column archived market row; the result shape cannot be shortened without dropping columns" },
+] }

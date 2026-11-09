@@ -16,6 +16,22 @@
 
 ### Operational
 
+- Speaks VGI protocol 3.2: requires `vgi-python>=0.50.0` and `vgi-rpc>=0.53.1`
+  (were 0.37.3 and 0.47.2), in `pyproject.toml` and both PEP-723 headers. The
+  vgi extension matches the protocol's major and minor version exactly, so a
+  worker on the older SDK is refused at ATTACH. The SQL surface is unchanged.
+  Under the new SDK the `series` and `exchange_status` keys are declared as
+  canonical `PRIMARY_KEY` and `NOT_NULL` constraint records, the form vgi.v3
+  sends; the old `primary_key=`/`not_null=` keywords now fail at import.
+
+- The catalog passes `vgi-lint-check==2.2.0`'s structural tier at
+  `--fail-on warning` (0.81.1, still pinned in the workflows, speaks only the
+  retired vgi.v2 protocol). The agent test tasks now publish only their names
+  and prompts; the graders (reference SQL, success criteria) moved to
+  `vgi-agent-tests.yaml`, which vgi-lint merges back in. The catalog gains a
+  `vgi.subtitle`, `historical_cutoff` is titled "Archive Boundary", and the
+  wide market result shapes carry a documented VGI417 waiver.
+
 - Requires `vgi-python>=0.37.3` and `vgi-rpc>=0.47.2` (were 0.31.0 and
   0.44.1), in `pyproject.toml` and in both entry-point scripts' PEP-723
   headers. vgi-python now identifies a schema by its `path` rather than a
