@@ -24,9 +24,9 @@
   canonical `PRIMARY_KEY` and `NOT_NULL` constraint records, the form vgi.v3
   sends; the old `primary_key=`/`not_null=` keywords now fail at import.
 
-- The catalog passes `vgi-lint-check==2.2.0`'s structural tier at
-  `--fail-on warning` (0.81.1, still pinned in the workflows, speaks only the
-  retired vgi.v2 protocol). The agent test tasks now publish only their names
+- CI lints with `vgi-lint-check==2.2.0` (was 0.81.1, which speaks only the
+  retired vgi.v2 protocol); the catalog passes its structural tier at
+  `--fail-on warning`. The agent test tasks now publish only their names
   and prompts; the graders (reference SQL, success criteria) moved to
   `vgi-agent-tests.yaml`, which vgi-lint merges back in. The catalog gains a
   `vgi.subtitle`, `historical_cutoff` is titled "Archive Boundary", and the
