@@ -192,7 +192,7 @@ class TestMicrostructureColumns:
         """The reason the column exists: a spread is only comparable in ticks."""
         (ticks,) = con.execute(
             "SELECT median((yes_ask_dollars - yes_bid_dollars) / list_filter(price_ranges, "
-            'r -> r.start <= yes_bid_dollars AND r."end" > yes_bid_dollars)[1].step) '
+            'lambda r: r.start <= yes_bid_dollars AND r."end" > yes_bid_dollars)[1].step) '
             "FROM kalshi.main.markets(?, status => 'open') WHERE yes_bid_dollars > 0",
             [SERIES],
         ).fetchone()

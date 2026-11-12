@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.3.0
+
+### Operational
+
+- Speaks VGI protocol 3.3: requires `vgi-python>=0.51.0` (was 0.50.0), in
+  `pyproject.toml` and both PEP-723 headers. The vgi extension matches the
+  protocol's major and minor version exactly, so a 3.2 worker is refused at
+  ATTACH by the current extension, and this worker by a 3.2 one. The SQL
+  surface is unchanged: the `series`, `exchange_status` and
+  `historical_cutoff` scan functions stay callable because they are also
+  listed as schema functions.
+- Depends on `numpy`. vgi-python 0.51 binds pushed-down filters on a DuckDB
+  connection that registers a Python UDF, which needs numpy; without it every
+  filtered scan failed with "numpy is required for this operation".
+- The `kalshi` secret type documents each field (`vgi_doc`) and links to
+  Kalshi's API-key guide (`vgi_doc_url`).
+- The README's ticks example and its end-to-end test use DuckDB's `lambda r:`
+  syntax; DuckDB 2.0 rejects the old `r ->` form.
+
 ## 1.2.0
 
 ### Fixed

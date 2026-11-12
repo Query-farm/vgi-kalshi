@@ -248,7 +248,7 @@ SELECT yes_sub_title,
        yes_ask_dollars - yes_bid_dollars AS spread,
        (yes_ask_dollars - yes_bid_dollars) / list_filter(
            price_ranges,
-           r -> r.start <= yes_bid_dollars AND r."end" > yes_bid_dollars
+           lambda r: r.start <= yes_bid_dollars AND r."end" > yes_bid_dollars
        )[1].step AS spread_in_ticks
 FROM kalshi.markets('KXPRESNOMR', status => 'open')
 WHERE yes_bid_dollars > 0;

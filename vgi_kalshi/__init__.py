@@ -1,3 +1,3 @@
 """Read-only VGI worker exposing the Kalshi prediction-market API to DuckDB/SQL."""
 
-__version__ = "1.2.0"
+__version__ = "1.3.0"

@@ -64,9 +64,23 @@ SECRET_SPEC = SecretTypeSpec(
     ),
     schema=pa.schema(
         [
-            pa.field(KEY_ID, pa.string()),
-            pa.field(PRIVATE_KEY, pa.string(), metadata={"redact": "true"}),
-        ]
+            pa.field(
+                KEY_ID,
+                pa.string(),
+                metadata={
+                    "vgi_doc": "API Key ID shown on Kalshi's Account > API Keys page when the key is created"
+                },
+            ),
+            pa.field(
+                PRIVATE_KEY,
+                pa.string(),
+                metadata={
+                    "redact": "true",
+                    "vgi_doc": "RSA private key (PEM) downloaded once when the API key is created",
+                },
+            ),
+        ],
+        metadata={"vgi_doc_url": "https://docs.kalshi.com/getting_started/api_keys"},
     ),
 )
 

@@ -24,7 +24,12 @@ dependencies = [
     # an in-process DuckDB engine, and without one every filtered scan fails at
     # runtime with "No DuckDB-compatible engine is installed". The offline tests
     # cannot see this, because the dev group brings in `duckdb` as a fallback.
-    "vgi-python[http,haybarn]>=0.50.0",
+    "vgi-python[http,haybarn]>=0.51.0",
+    # vgi-python 0.51 registers a Python UDF on the connection it binds
+    # pushed-down filters with, and DuckDB's `create_function` needs numpy.
+    # Neither the SDK nor its `haybarn` extra depends on it, so without this
+    # every filtered scan fails at runtime ("numpy is required").
+    "numpy>=2",
     "httpx>=0.27",
     # Brotli lets httpx advertise `br`, which Kalshi honours. The series
     # catalog is 15.6 MB of JSON: brotli ships it in 1.35 MB against gzip's
@@ -37,7 +42,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-serve = ["vgi-python[http,haybarn,oauth]>=0.50.0", "vgi-rpc[sentry]>=0.53.1"]
+serve = ["vgi-python[http,haybarn,oauth]>=0.51.0", "vgi-rpc[sentry]>=0.53.1"]
 
 [dependency-groups]
 dev = [
