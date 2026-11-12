@@ -54,5 +54,5 @@ jobs:
       # offline test could see. Slow is the price of that.
       - name: vgi-lint (structural + behavioural)
         run: >
-          uvx --no-sources --from vgi-lint-check==2.2.0 vgi-lint lint "uv run --no-sources kalshi_worker.py"
+          uvx --no-sources --from vgi-lint-check==2.5.0 vgi-lint lint "uv run --no-sources kalshi_worker.py"
           --execute-concurrency 1 --no-check-links --audit-waivers --fail-on error
