@@ -12,10 +12,12 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from IPython import get_ipython
 from IPython.display import display
+from vgi_notebooks import finish, prose, theme
 
 from replay_source import ReplaySource, request_key
-from vgi_notebooks import prose, finish, theme
 
+# These names are intentionally exported into the notebook namespace.
+__all__ = ["hashlib", "Decimal", "display", "request_key"]
 
 
 def initialize(namespace):
@@ -37,10 +39,13 @@ def initialize(namespace):
     os.environ["KALSHI_BASE_URL"] = server.url if server else "https://api.elections.kalshi.com/trade-api/v2"
     started_at = datetime.now(UTC).isoformat()
     fixture_secret_directory = TemporaryDirectory(prefix="vgi-fixture-secrets-")
-    con = haybarn.connect(config={"secret_directory": fixture_secret_directory.name, "allow_persistent_secrets": False})
+    con = haybarn.connect(
+        config={"secret_directory": fixture_secret_directory.name, "allow_persistent_secrets": False}
+    )
     assert con.execute("SELECT count(*) FROM duckdb_secrets()").fetchall() == [(0,)]
     ip = get_ipython()
     from vgi_notebooks.runtime import load_sql
+
     load_sql(ip)
     namespace.update({k: v for k, v in globals().items() if not k.startswith("__")})
     ip.run_line_magic("sql", "con")
@@ -57,13 +62,22 @@ def plot_depth(curve, band, source):
     full_end = max(float(curve.distance_cents.max()), band, 1)
     near_end = min(full_end, max(10, band * 2))
     fig, axes = plt.subplots(1, 2, figsize=(11.2, 5.8))
-    for ax, endpoint, label in zip(axes, [near_end, full_end], ["NEAR THE BEST QUOTE", "FULL RETURNED BOOK"]):
+    for ax, endpoint, label in zip(
+        axes, [near_end, full_end], ["NEAR THE BEST QUOTE", "FULL RETURNED BOOK"], strict=True
+    ):
         maximum = 0
         for side, part in curve.groupby("book_side", sort=False):
             x = part.distance_cents.astype(float)
             y = part.cumulative_contracts.astype(float)
-            ax.step(x, y, where="post", color=colors[side], linewidth=2.1,
-                    linestyle="-" if side == "YES bid" else "--", label=side)
+            ax.step(
+                x,
+                y,
+                where="post",
+                color=colors[side],
+                linewidth=2.1,
+                linestyle="-" if side == "YES bid" else "--",
+                label=side,
+            )
             visible = y[x <= endpoint]
             maximum = max(maximum, float(visible.max()) if len(visible) else 0)
             selected = y[x <= band]
@@ -81,9 +95,13 @@ def plot_depth(curve, band, source):
         ax.yaxis.set_major_formatter(lambda value, _: f"{value:,.0f}")
     handles, labels = axes[0].get_legend_handles_labels()
     fig.legend(handles, labels, loc="upper left", bbox_to_anchor=(0.065, 0.84), ncol=2, fontsize=10)
-    finish(fig, "What looks deep overall can be thin near the quote",
-           f"Shading marks the selected {band}¢ band. The panels use different quantity scales.",
-           source, name="depth-band-" + str(band))
+    finish(
+        fig,
+        "What looks deep overall can be thin near the quote",
+        f"Shading marks the selected {band}¢ band. The panels use different quantity scales.",
+        source,
+        name="depth-band-" + str(band),
+    )
 
 
 def plot_band(depth, band, source):
@@ -97,21 +115,44 @@ def plot_band(depth, band, source):
     extra = (depth.band_contracts - depth.best_quote_contracts).astype(float)
     maximum = max(1, float(depth.band_contracts.max()))
     ax.barh(depth.book_side, best, color=[colors[s] for s in depth.book_side], height=0.45)
-    ax.barh(depth.book_side, extra, left=best, color=[colors[s] for s in depth.book_side],
-            alpha=0.25, height=0.45)
+    ax.barh(
+        depth.book_side, extra, left=best, color=[colors[s] for s in depth.book_side], alpha=0.25, height=0.45
+    )
     for i, row in enumerate(depth.itertuples()):
         total = float(row.band_contracts)
-        share = "no full-book denominator" if pd.isna(row.band_share) else f"{row.band_share:.1%} of this side's full book"
-        ax.annotate(f"{total:,.2f} contracts", (total, i), xytext=(9, 4), textcoords="offset points",
-                    va="bottom", fontweight="bold", fontsize=11)
-        ax.annotate(share, (total, i), xytext=(9, -6), textcoords="offset points",
-                    va="top", color="#627468", fontsize=9)
+        share = (
+            "no full-book denominator"
+            if pd.isna(row.band_share)
+            else f"{row.band_share:.1%} of this side's full book"
+        )
+        ax.annotate(
+            f"{total:,.2f} contracts",
+            (total, i),
+            xytext=(9, 4),
+            textcoords="offset points",
+            va="bottom",
+            fontweight="bold",
+            fontsize=11,
+        )
+        ax.annotate(
+            share,
+            (total, i),
+            xytext=(9, -6),
+            textcoords="offset points",
+            va="top",
+            color="#627468",
+            fontsize=9,
+        )
     ax.invert_yaxis()
     ax.set_xlim(0, maximum * 1.60)
     ax.set_xlabel("Quoted contracts · fractional quantities retained")
     ax.xaxis.set_major_formatter(lambda value, _: f"{value:,.0f}")
     ax.grid(axis="x")
     ax.set_axisbelow(True)
-    finish(fig, f"Within {band}¢: separate the best quote from nearby depth",
-           "Solid segments sit at the best quote; pale segments add levels within the band.",
-           source, name="selected-band-" + str(band))
+    finish(
+        fig,
+        f"Within {band}¢: separate the best quote from nearby depth",
+        "Solid segments sit at the best quote; pale segments add levels within the band.",
+        source,
+        name="selected-band-" + str(band),
+    )
