@@ -28,8 +28,8 @@ from vgi.catalog.catalog_interface import AttachOpaqueData, CatalogAttachResult,
 from vgi.catalog.descriptors import Table
 
 from vgi_kalshi import __version__, auth
-from vgi_kalshi.historical import HISTORICAL_FUNCTIONS, HistoricalCutoffFunction
-from vgi_kalshi.markets import MARKET_FUNCTIONS
+from vgi_kalshi.historical import HISTORICAL_FUNCTIONS, SETTLED_VWAP_EXAMPLE, HistoricalCutoffFunction
+from vgi_kalshi.markets import EVENT_LADDER_EXAMPLE, MARKET_FUNCTIONS, OPEN_EVENTS_EXAMPLE
 from vgi_kalshi.meta import column_comments, docs, examples, keywords
 from vgi_kalshi.reference import REFERENCE_FUNCTIONS, AllSeriesFunction, ExchangeStatusFunction
 from vgi_kalshi.schemas import EXCHANGE_STATUS_SCHEMA, HISTORICAL_CUTOFF_SCHEMA, SERIES_SCHEMA
@@ -73,10 +73,9 @@ _EXAMPLE_QUERIES = examples(
         "LATERAL kalshi.main.trades(m.ticker, max_rows => 100) t "
         "ORDER BY t.created_time DESC",
     ),
-    (
-        "Bitcoin daily events by strike date",
-        "SELECT event_ticker, title, strike_date FROM kalshi.main.events('KXBTCD') ORDER BY strike_date",
-    ),
+    OPEN_EVENTS_EXAMPLE,
+    EVENT_LADDER_EXAMPLE,
+    SETTLED_VWAP_EXAMPLE,
     (
         "The busiest open market's current quote",
         "SELECT ticker, status, yes_bid_dollars, yes_ask_dollars "
@@ -238,6 +237,16 @@ _AGENT_TEST_TASKS = json.dumps(
             "prompt": (
                 "Pick any event in the Kalshi series KXBTCD. What question does it ask, when does it "
                 "resolve, and what source decides the outcome?"
+            ),
+        },
+        {
+            "name": "settled_event_vwap",
+            "prompt": (
+                "The Kalshi event KXBTCD-26JUL0119 (series KXBTCD) has settled. Find the market in "
+                "it with the most contracts traded, and return exactly one row with the columns "
+                "ticker, settlement_value_dollars (what it paid, as Kalshi reports it) and "
+                "vwap_dollars: the volume-weighted average yes price over its archived trade tape, "
+                "rounded to 4 decimal places as DECIMAL(18,4)."
             ),
         },
         {

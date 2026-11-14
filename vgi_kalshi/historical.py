@@ -44,6 +44,7 @@ from vgi_kalshi.schemas import (
     TRADE_SCHEMA,
     batch_from_rows,
     flatten_candlesticks,
+    to_timestamp,
 )
 
 if TYPE_CHECKING:
@@ -84,6 +85,47 @@ class HistoricalMarketsArgs:
 
     series_ticker: Annotated[str, Arg(0, doc="Series ticker input column, e.g. 'KXBTCD'")]
     event_ticker: Annotated[str, Arg("event_ticker", doc="Narrow to one event", default="")] = ""
+
+
+def archive_markets_query(series_ticker: str, event_ticker: str | None) -> dict[str, Any]:
+    """The ``/historical/markets`` filter for a series, optionally narrowed to one event.
+
+    Unlike the live ``/markets``, the archive rejects ``series_ticker`` and
+    ``event_ticker`` together with a 400 ("filters are mutually exclusive"), so
+    narrowing to an event — by argument or by a pushed-down
+    ``WHERE event_ticker = ...`` — sends the event alone. An event belongs to
+    exactly one series, so nothing is lost; the series argument still labels
+    the rows.
+    """
+    if event_ticker:
+        return {"event_ticker": event_ticker}
+    return {"series_ticker": series_ticker}
+
+
+#: A composed example: `historical_markets()` picks the settled markets and
+#: supplies what each paid; `historical_trades()` supplies the tape it traded on.
+#: Defined once and shared with the schema-level list in worker.py.
+SETTLED_VWAP_EXAMPLE = (
+    "Ten recently settled Bitcoin markets that traded: what each paid next to the "
+    "volume-weighted price it traded at",
+    "SELECT m.ticker, m.result, m.settlement_value_dollars, "
+    "CAST(sum(t.yes_price_dollars * t.count_fp) / sum(t.count_fp) AS DECIMAL(18,4)) AS vwap_dollars, "
+    "sum(t.count_fp) AS contracts FROM ("
+    "SELECT ticker, result, settlement_value_dollars FROM kalshi.main.historical_markets('KXBTCD') "
+    "WHERE volume_fp > 0 LIMIT 10) AS m, "
+    "LATERAL kalshi.main.historical_trades(m.ticker) AS t "
+    "GROUP BY m.ticker, m.result, m.settlement_value_dollars ORDER BY m.ticker",
+)
+
+#: The archive pages newest-first, so a LIMIT inside the subquery is what keeps
+#: this cheap: ordering the series' whole archive by close_time would walk every
+#: archived page first, long past any example timeout.
+RECENT_SETTLED_EXAMPLE = (
+    "How recent Bitcoin daily markets settled",
+    "SELECT ticker, close_time, result, settlement_value_dollars FROM ("
+    "SELECT ticker, close_time, result, settlement_value_dollars "
+    "FROM kalshi.main.historical_markets('KXBTCD') LIMIT 50) ORDER BY close_time DESC, ticker",
+)
 
 
 @init_single_worker
@@ -139,11 +181,8 @@ class HistoricalMarketsFunction(TableFunctionGenerator[HistoricalMarketsArgs, Pa
                 "so read it rather than hardcoding a date."
             ),
             example_queries=examples(
-                (
-                    "How recent Bitcoin daily markets settled",
-                    "SELECT ticker, close_time, result, settlement_value_dollars "
-                    "FROM kalshi.main.historical_markets('KXBTCD') ORDER BY close_time DESC",
-                ),
+                RECENT_SETTLED_EXAMPLE,
+                SETTLED_VWAP_EXAMPLE,
                 (
                     "Settled markets whose last traded price disagreed with the outcome",
                     "SELECT ticker, last_price_dollars, settlement_value_dollars "
@@ -153,13 +192,8 @@ class HistoricalMarketsFunction(TableFunctionGenerator[HistoricalMarketsArgs, Pa
             ),
         )
         examples = [
-            FunctionExample(
-                sql=(
-                    "SELECT ticker, close_time, result, settlement_value_dollars "
-                    "FROM kalshi.main.historical_markets('KXBTCD') ORDER BY close_time DESC"
-                ),
-                description="How recent Bitcoin daily markets settled",
-            ),
+            FunctionExample(sql=sql, description=description)
+            for description, sql in (RECENT_SETTLED_EXAMPLE, SETTLED_VWAP_EXAMPLE)
         ]
 
     @classmethod
@@ -191,10 +225,10 @@ class HistoricalMarketsFunction(TableFunctionGenerator[HistoricalMarketsArgs, Pa
             path="/historical/markets",
             key="markets",
             fixed_schema=cls.FIXED_SCHEMA,
-            query={
-                "series_ticker": params.args.series_ticker,
-                "event_ticker": params.args.event_ticker or equality(params, "event_ticker"),
-            },
+            query=archive_markets_query(
+                params.args.series_ticker,
+                params.args.event_ticker or equality(params, "event_ticker"),
+            ),
             ttl=_ARCHIVE_TTL,
             stamp=stamp,
         )
@@ -337,7 +371,7 @@ class HistoricalCandlestickArgs:
         int, Arg("start_ts", doc="Window start, epoch seconds (0 = 30d before end)", default=0, ge=0)
     ] = 0
     end_ts: Annotated[
-        int, Arg("end_ts", doc="Window end, epoch seconds (0 = the archive cutoff)", default=0, ge=0)
+        int, Arg("end_ts", doc="Window end, epoch seconds (0 = the market's close)", default=0, ge=0)
     ] = 0
 
 
@@ -385,6 +419,10 @@ class HistoricalCandlesticksFunction(RowTransformFunction[HistoricalCandlestickA
                 "There is no archive equivalent of the batched live endpoint, so a LATERAL over "
                 "many markets issues one request per market against a rate-limited API. Drive it "
                 "from a narrow set of tickers.\n\n"
+                "### Default window\n\n"
+                "Without `end_ts`, each market's window ends at its own `close_time` (looked up "
+                "in one request per 100 tickers), and without `start_ts` it starts 30 days "
+                "earlier — so a market's whole life comes back however long ago it settled.\n\n"
                 "### Immutable, so cached\n\n"
                 "Nothing in the archive can change, so results are cached for a day regardless "
                 "of what the window looks like — the live function's forming-candle problem "
@@ -434,18 +472,31 @@ class HistoricalCandlesticksFunction(RowTransformFunction[HistoricalCandlestickA
         rows: list[dict[str, Any]] = []
         parents: list[int] = []
         credentials = auth.for_call(params.secrets, params.attach_opaque_data)
+        pushed_min, pushed_max = epoch_bounds(params, "end_period_ts")
         with api.open_client() as client:
-            end_ts = params.args.end_ts or _cutoff_epoch(client, credentials)
-            start_ts = params.args.start_ts or (end_ts - 30 * 86_400)
-            # Narrow only; see the live twin for why intersecting is safe.
-            pushed_min, pushed_max = epoch_bounds(params, "end_period_ts")
-            if pushed_min is not None:
-                start_ts = max(start_ts, pushed_min)
-            if pushed_max is not None:
-                end_ts = min(end_ts, pushed_max)
+            # Without an explicit end, each market's window ends at its own close.
+            closes = (
+                {}
+                if params.args.end_ts
+                else archive_close_epochs(
+                    [str(t) for t in tickers if t is not None], client=client, credentials=credentials
+                )
+            )
+            fallback_end: int | None = None
             for index, ticker in enumerate(tickers):
                 if ticker is None:
                     continue
+                end_ts = params.args.end_ts or closes.get(str(ticker), 0)
+                if not end_ts:
+                    if fallback_end is None:
+                        fallback_end = _cutoff_epoch(client, credentials)
+                    end_ts = fallback_end
+                start_ts = params.args.start_ts or (end_ts - _DEFAULT_WINDOW_SECONDS)
+                # Narrow only; see the live twin for why intersecting is safe.
+                if pushed_min is not None:
+                    start_ts = max(start_ts, pushed_min)
+                if pushed_max is not None:
+                    end_ts = min(end_ts, pushed_max)
                 candles = api.historical_candlesticks(
                     str(ticker),
                     period_interval=params.args.period_interval,
@@ -460,15 +511,40 @@ class HistoricalCandlesticksFunction(RowTransformFunction[HistoricalCandlestickA
         _emit(out, params, cls.FIXED_SCHEMA, rows, parents)
 
 
+#: How far back an archived candle window reaches when ``start_ts`` is not given.
+_DEFAULT_WINDOW_SECONDS = 30 * 86_400
+
+#: Tickers per ``/historical/markets?tickers=`` request, matching the live batch cap.
+_CLOSE_LOOKUP_CHUNK = 100
+
+
+def archive_close_epochs(tickers: Sequence[str], *, client: Any, credentials: Any = None) -> dict[str, int]:
+    """Each archived market's ``close_time`` as epoch seconds, one request per 100 tickers.
+
+    This is the default end of a market's candle window. One global default
+    cannot work: the archive spans many months, so a fixed 30-day window ending
+    at the cutoff misses every market that closed before it — most of them —
+    and returns no rows rather than an error. Tickers Kalshi does not know are
+    simply absent from the result.
+    """
+    unique = list(dict.fromkeys(tickers))
+    closes: dict[str, int] = {}
+    for start in range(0, len(unique), _CLOSE_LOOKUP_CHUNK):
+        chunk = unique[start : start + _CLOSE_LOOKUP_CHUNK]
+        for market in api.historical_markets(tickers=chunk, client=client, credentials=credentials):
+            moment = to_timestamp(market.get("close_time"))
+            if moment is not None and market.get("ticker"):
+                closes[str(market["ticker"])] = int(moment.timestamp())
+    return closes
+
+
 def _cutoff_epoch(client: Any, credentials: Any) -> int:
-    """The archive cutoff as epoch seconds, for a default window that ends in the archive.
+    """The archive cutoff as epoch seconds: the window end for a market the archive does not know.
 
     Defaulting to "now" would be wrong here in a way that is hard to see: the
     archive holds nothing recent, so a window ending now and starting 30 days ago
     would mostly cover the live period and come back thin or empty.
     """
-    from vgi_kalshi.schemas import to_timestamp
-
     payload = api.historical_cutoff(client=client, credentials=credentials)
     moment = to_timestamp(payload.get("market_settled_ts"))
     return int(moment.timestamp()) if moment else 0

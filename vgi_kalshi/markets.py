@@ -968,6 +968,30 @@ class TradesFunction(RowTransformFunction[TradesArgs]):
         )
 
 
+#: A composed example: `events()` supplies each event's question and resolution
+#: date, `markets()` its strike ladder. Defined once and shared by the events()
+#: example lists and the schema-level list in worker.py.
+EVENT_LADDER_EXAMPLE = (
+    "Upcoming Bitcoin events with their question and resolution date, plus the implied median "
+    "read off each event's strike ladder: the highest strike still priced at even odds or better "
+    "to settle above",
+    "SELECT e.event_ticker, e.title, e.strike_date, count(*) AS strikes, "
+    "max(m.floor_strike) FILTER (WHERE (m.yes_bid_dollars + m.yes_ask_dollars) / 2 >= 0.5) "
+    "AS implied_median, sum(m.open_interest_fp) AS open_interest "
+    "FROM kalshi.main.events('KXBTCD', status => 'open') AS e "
+    "JOIN kalshi.main.markets('KXBTCD', status => 'open') AS m ON m.event_ticker = e.event_ticker "
+    "WHERE m.strike_type = 'greater' "
+    "GROUP BY e.event_ticker, e.title, e.strike_date ORDER BY e.strike_date",
+)
+
+#: Narrowed to open events: the unfiltered scan walks the series' whole history
+#: (~40 s for KXBTCD), long past any example timeout.
+OPEN_EVENTS_EXAMPLE = (
+    "Open Bitcoin events by strike date",
+    "SELECT event_ticker, title, strike_date FROM kalshi.main.events('KXBTCD', status => 'open') "
+    "ORDER BY strike_date",
+)
+
 EVENTS_DOCS = docs(
     category="reference",
     result_schema=EVENT_SCHEMA,
@@ -996,14 +1020,12 @@ EVENTS_DOCS = docs(
         "larger outright. Rows stream a page at a time, so a `LIMIT` stops early."
     ),
     example_queries=examples(
+        OPEN_EVENTS_EXAMPLE,
+        EVENT_LADDER_EXAMPLE,
         (
-            "Bitcoin daily events by strike date",
-            "SELECT event_ticker, title, strike_date FROM kalshi.main.events('KXBTCD') ORDER BY strike_date",
-        ),
-        (
-            "Settlement sources for each event, one row per source",
+            "Settlement sources for each open event, one row per source",
             "SELECT event_ticker, unnest(settlement_sources).name AS source "
-            "FROM kalshi.main.events('KXBTCD') ORDER BY event_ticker, source",
+            "FROM kalshi.main.events('KXBTCD', status => 'open') ORDER BY event_ticker, source",
         ),
     ),
 )
@@ -1055,13 +1077,8 @@ class EventsFunction(TableFunctionGenerator[EventsArgs, PagedScanState]):
         auto_apply_filters = True
         tags = EVENTS_DOCS
         examples = [
-            FunctionExample(
-                sql=(
-                    "SELECT event_ticker, title, strike_date "
-                    "FROM kalshi.main.events('KXBTCD') ORDER BY strike_date"
-                ),
-                description="Bitcoin daily events by strike date",
-            ),
+            FunctionExample(sql=sql, description=description)
+            for description, sql in (OPEN_EVENTS_EXAMPLE, EVENT_LADDER_EXAMPLE)
         ]
 
     @classmethod
@@ -1238,9 +1255,9 @@ class EventMetadataFunction(RowTransformFunction[EventTickerArgs]):
                     "FROM kalshi.main.event_metadata('KXBTCD-26SEP0417')",
                 ),
                 (
-                    "Settlement sources across a whole series",
+                    "Settlement sources across a series' open events",
                     "SELECT DISTINCT md.settlement_source_name "
-                    "FROM kalshi.main.events('KXBTCD') e, "
+                    "FROM kalshi.main.events('KXBTCD', status => 'open') e, "
                     "LATERAL kalshi.main.event_metadata(e.event_ticker, cache_ttl => 300) md "
                     "WHERE md.settlement_source_name IS NOT NULL "
                     "ORDER BY md.settlement_source_name",

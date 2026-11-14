@@ -171,6 +171,17 @@ actually paid), and `historical_candlesticks` takes only a market ticker —
 the archive is not scoped by series, unlike the live endpoint.
 
 ```sql
+-- What recently settled markets paid, next to the price they traded at
+SELECT m.ticker, m.result, m.settlement_value_dollars,
+       CAST(sum(t.yes_price_dollars * t.count_fp) / sum(t.count_fp) AS DECIMAL(18,4)) AS vwap_dollars
+FROM (SELECT ticker, result, settlement_value_dollars
+      FROM kalshi.historical_markets('KXBTCD') WHERE volume_fp > 0 LIMIT 10) m,
+     LATERAL kalshi.historical_trades(m.ticker) t
+GROUP BY m.ticker, m.result, m.settlement_value_dollars
+ORDER BY m.ticker;
+```
+
+```sql
 -- Order books for every open market in a series, in one query
 SELECT m.ticker, o.side, o.price_dollars, o.count_fp
 FROM kalshi.markets('KXBTCD') m,

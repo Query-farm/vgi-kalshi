@@ -106,3 +106,15 @@ tasks:
     o GROUP BY o.side
   success_criteria: Uses orderbook() and aggregates count_fp by side.
   unordered: true
+- name: settled_event_vwap
+  # The archive is immutable, so an exact comparison is stable. Checked against the
+  # tape: the top market traded 611,509.70 contracts (next: 398,092.37) and its
+  # unrounded VWAP is 0.59548, far from a rounding boundary.
+  reference_sql: >-
+    SELECT m.ticker, m.settlement_value_dollars, CAST(round(sum(t.yes_price_dollars * t.count_fp) / sum(t.count_fp),
+    4) AS DECIMAL(18,4)) AS vwap_dollars FROM (SELECT ticker, settlement_value_dollars FROM kalshi.main.historical_markets('KXBTCD',
+    event_ticker => 'KXBTCD-26JUL0119') ORDER BY volume_fp DESC LIMIT 1) AS m, LATERAL kalshi.main.historical_trades(m.ticker)
+    AS t GROUP BY m.ticker, m.settlement_value_dollars
+  success_criteria: >-
+    Uses the archive (historical_markets narrowed to the event, then historical_trades for the chosen market)
+    rather than the live functions, which return nothing for a settled market.

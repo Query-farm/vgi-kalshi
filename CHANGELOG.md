@@ -1,5 +1,29 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- `historical_candlesticks` returned no rows for almost every archived market.
+  Without `end_ts` its window was the 30 days before the archive cutoff, which
+  misses any market that settled earlier; each market's window now ends at its
+  own `close_time` (one `/historical/markets?tickers=` lookup per 100 tickers).
+- `historical_markets(series, event_ticker => ...)`, and a pushed-down
+  `WHERE event_ticker = ...`, failed with a 400: the archive endpoint rejects
+  `series_ticker` and `event_ticker` together. An event now replaces the series
+  in the request.
+- Published examples that timed out or drew a 429 under `vgi-lint --execute`:
+  the `events()` and `event_metadata()` examples that scanned every event in
+  the series now ask for open events, and `historical_markets()`'s first
+  example takes the newest archive page instead of sorting the whole archive.
+
+### Documentation
+
+- Composed examples: an event rollup joining `events()` to `markets()` with the
+  implied median from each strike ladder, and settled markets'
+  volume-weighted traded price from `historical_trades()` next to what
+  `historical_markets()` says they paid. New agent task `settled_event_vwap`.
+
 ## 1.3.0
 
 ### Operational

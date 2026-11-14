@@ -12,6 +12,7 @@ from __future__ import annotations
 import httpx
 import pytest
 
+from vgi_kalshi import historical
 from vgi_kalshi import kalshi_api as api
 from vgi_kalshi.markets import _cap_depth
 
@@ -209,3 +210,66 @@ class TestMalformedBatchPayloads:
         client = _client(lambda request: httpx.Response(200, json=payload))
         books = api.orderbooks(["GOOD"], client=client)
         assert set(books) == {"GOOD"}
+
+
+class TestArchiveCloseLookup:
+    """The default end of an archived candle window is each market's own close.
+
+    Regression guard: the default used to be one global window — the 30 days
+    before the archive cutoff — so every market that settled earlier than that
+    came back with no candles at all, and the published examples returned no
+    rows.
+    """
+
+    def test_closes_are_keyed_by_ticker_in_epoch_seconds(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            assert request.url.path.endswith("/historical/markets")
+            return httpx.Response(
+                200,
+                json={
+                    "markets": [
+                        {"ticker": "A", "close_time": "2026-07-01T23:00:00Z"},
+                        {"ticker": "B", "close_time": "0001-01-01T00:00:00Z"},
+                    ],
+                    "cursor": "",
+                },
+            )
+
+        found = historical.archive_close_epochs(["A", "B", "UNKNOWN"], client=_client(handler))
+        # B's Go zero time is "unset", and UNKNOWN is absent: both fall back to the cutoff.
+        assert found == {"A": 1782946800}
+
+    def test_tickers_are_deduplicated_and_chunked(self) -> None:
+        seen: list[list[str]] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            seen.append(request.url.params["tickers"].split(","))
+            return httpx.Response(200, json={"markets": [], "cursor": ""})
+
+        tickers = [f"T{i}" for i in range(150)]
+        historical.archive_close_epochs([*tickers, "T0"], client=_client(handler))
+        assert [len(chunk) for chunk in seen] == [100, 50]
+        assert sorted(t for chunk in seen for t in chunk) == sorted(tickers)
+
+    def test_no_tickers_makes_no_request(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:  # pragma: no cover - must not run
+            raise AssertionError("no request expected")
+
+        assert historical.archive_close_epochs([], client=_client(handler)) == {}
+
+
+class TestArchiveMarketsQuery:
+    """`/historical/markets` 400s on series_ticker and event_ticker together.
+
+    Regression guard: `historical_markets('KXBTCD', event_ticker => ...)` — and a
+    pushed-down `WHERE event_ticker = ...` — sent both and failed outright, while
+    the live `/markets` accepts the same pair.
+    """
+
+    def test_series_alone(self) -> None:
+        assert historical.archive_markets_query("KXBTCD", None) == {"series_ticker": "KXBTCD"}
+
+    def test_an_event_replaces_the_series(self) -> None:
+        assert historical.archive_markets_query("KXBTCD", "KXBTCD-26JUL0119") == {
+            "event_ticker": "KXBTCD-26JUL0119"
+        }
