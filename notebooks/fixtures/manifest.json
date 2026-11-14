@@ -1,0 +1,36 @@
+{
+  "provenance": "Complete unmodified anonymous public Kalshi API responses; selected one existing BTC market for an illustrative book, not an exchange-wide ranking",
+  "ticker": "KXBTCD-26NOV1417-T66999.99",
+  "capture_started_at_utc": "2026-11-14T07:43:55.021061+00:00",
+  "capture_completed_at_utc": "2026-11-14T07:43:55.243246+00:00",
+  "entries": [
+    {
+      "filename": "market.json",
+      "url": "https://api.elections.kalshi.com/trade-api/v2/markets/KXBTCD-26NOV1417-T66999.99",
+      "request_path": "/markets/KXBTCD-26NOV1417-T66999.99",
+      "request_started_at_utc": "2026-11-14T07:43:55.021061+00:00",
+      "request_completed_at_utc": "2026-11-14T07:43:55.134939+00:00",
+      "http_status": 200,
+      "response_headers": {
+        "Content-Type": "application/json",
+        "Date": "Sat, 14 Nov 2026 07:43:55 GMT"
+      },
+      "bytes": 1936,
+      "sha256": "362adc4d470a94a1ededd394523053c0f930e9f113ad6bb6e47ed5d49afb5030"
+    },
+    {
+      "filename": "orderbook.json",
+      "url": "https://api.elections.kalshi.com/trade-api/v2/markets/orderbooks?tickers=KXBTCD-26NOV1417-T66999.99",
+      "request_path": "/markets/orderbooks?tickers=KXBTCD-26NOV1417-T66999.99",
+      "request_started_at_utc": "2026-11-14T07:43:55.135121+00:00",
+      "request_completed_at_utc": "2026-11-14T07:43:55.243246+00:00",
+      "http_status": 200,
+      "response_headers": {
+        "Content-Type": "application/json; charset=utf-8",
+        "Date": "Sat, 14 Nov 2026 07:43:55 GMT"
+      },
+      "bytes": 2013,
+      "sha256": "3c48f773bba479569fbccb8b444ac2b1b4022c0cabd971a0e10640dd89b3f161"
+    }
+  ]
+}

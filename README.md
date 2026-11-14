@@ -640,3 +640,7 @@ and subject to [Kalshi's terms of use](https://kalshi.com/terms). See
   Built with <a href="https://query.farm/vgi/">VGI — the Vector Gateway Interface</a><br>
   by <a href="https://query.farm">🚜 Query.Farm</a>
 </p>
+
+## Notebooks
+
+[Executed quoted-depth walkthrough with recorded public data](notebooks/README.md).
