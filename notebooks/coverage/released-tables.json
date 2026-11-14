@@ -1,0 +1,25 @@
+{
+  "query": "SELECT database_name,schema_name,table_name FROM duckdb_tables() WHERE database_name='kalshi' ORDER BY schema_name,table_name",
+  "columns": [
+    "database_name",
+    "schema_name",
+    "table_name"
+  ],
+  "rows": [
+    [
+      "kalshi",
+      "main",
+      "exchange_status"
+    ],
+    [
+      "kalshi",
+      "main",
+      "historical_cutoff"
+    ],
+    [
+      "kalshi",
+      "main",
+      "series"
+    ]
+  ]
+}

@@ -1,14 +1,14 @@
 [project]
 name = "vgi-kalshi-notebooks"
 version = "0.1.0"
-description = "Recorded public order-book depth analysis through VGI"
+description = "Focused Kalshi market-data analysis through VGI"
 requires-python = ">=3.11,<3.15"
 dependencies = [
-    "vgi-example-notebooks[runner] @ git+https://github.com/Query-farm/vgi-example-notebooks@v0.2.0",
+    "vgi-example-notebooks[runner] @ git+https://github.com/Query-farm/vgi-example-notebooks@v0.3.0",
 ]
 
 [tool.ruff]
-builtins = ["coverage", "quotes", "depth", "con"] # JupySQL result captures
+builtins = ["coverage", "quotes", "depth", "con", "series_catalog", "venues", "event_context", "screened", "funnel", "trades", "hourly", "report", "routing", "comparison", "checks"] # JupySQL result captures
 line-length = 110
 target-version = "py313"
 extend-exclude = ["artifacts", "validation"]

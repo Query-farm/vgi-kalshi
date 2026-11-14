@@ -1,0 +1,539 @@
+{
+  "schema_version": 1,
+  "catalogs": {
+    "released": {
+      "path": "coverage/catalog-released.json",
+      "sha256": "1a2ed2ab7dd292a44cbb53e99eb8164496d2e8916cd2c7f59bd6a2af167bff2d",
+      "review": {
+        "status": "approved",
+        "reviewer": "Codex /root/notebooks_sympy",
+        "reviewed_at": "2026-11-14T17:32:19.610302+00:00",
+        "catalog_sha256": "1a2ed2ab7dd292a44cbb53e99eb8164496d2e8916cd2c7f59bd6a2af167bff2d",
+        "notes": "Complete actual engine exports of all worker functions and tables; compared registration in worker.py and market/reference/historical modules. No private account/order/position capability is registered. Optional authentication and all three backing scan functions remain in the denominator. Public main source baseline and v1.3.0 have the same17 names and signatures; no source implementation is changed by this notebook publication."
+      }
+    },
+    "current": {
+      "path": "coverage/catalog-current.json",
+      "sha256": "0510cea22965728fe58e9bf0ab337659a837fa9ccda72dbf65be5452cacd99f2",
+      "review": {
+        "status": "approved",
+        "reviewer": "Codex /root/notebooks_sympy",
+        "reviewed_at": "2026-11-14T17:32:19.610302+00:00",
+        "catalog_sha256": "0510cea22965728fe58e9bf0ab337659a837fa9ccda72dbf65be5452cacd99f2",
+        "notes": "Complete actual engine exports of all worker functions and tables; compared registration in worker.py and market/reference/historical modules. No private account/order/position capability is registered. Optional authentication and all three backing scan functions remain in the denominator. Public main source baseline and v1.3.0 have the same17 names and signatures; no source implementation is changed by this notebook publication."
+      }
+    }
+  },
+  "notebooks": [
+    {
+      "path": "01_quoted_depth_depends_on_the_band.ipynb",
+      "sha256": "0079d50de1a8b54c1d8f17ec1bcb1c3da3c6e1fffb01d2c99da7cf3d2707dbd8",
+      "execution": {
+        "path": "coverage/run-01.json",
+        "sha256": "cb1c2dd8ce51cabb6cfbaf88c9d80d34c00c76fc117c266fe2401084aa8da665"
+      }
+    },
+    {
+      "path": "02_discover_contracts_with_source_context.ipynb",
+      "sha256": "6e90c663ba63b4bfc4dbadaad87af3b8083b17f02ed659d9fce89d935a97a41e",
+      "execution": {
+        "path": "coverage/run-02.json",
+        "sha256": "427c5dceb0310db4394b7b241b390c071f54789ae0dd83c3b370ef12c48b9164"
+      }
+    },
+    {
+      "path": "03_reconcile_trades_and_candles.ipynb",
+      "sha256": "18a996d233ecd717ffbf014bf5d875f8d9250f828c3286457371a3e291d11871",
+      "execution": {
+        "path": "coverage/run-03.json",
+        "sha256": "053e2e2a0b654b756e73ea1e38c128d6c5074f5a15e8bf2ca13cfab5076876a5"
+      }
+    },
+    {
+      "path": "04_route_across_the_archive_boundary.ipynb",
+      "sha256": "36eb57e60fe3fa625484ddaacb8ac658987f07815eefa16939fb930a9fa63cbe",
+      "execution": {
+        "path": "coverage/run-04.json",
+        "sha256": "29ae5b7f8fd981edf5e4fa1f4aa48a25311300121fb14a5424a0644e736d01ec"
+      }
+    }
+  ],
+  "examples": [
+    {
+      "object": {
+        "schema": "main",
+        "name": "market"
+      },
+      "notebook": "01_quoted_depth_depends_on_the_band.ipynb",
+      "sql": [
+        {
+          "cell": "4d242fdf",
+          "reference": "kalshi.main.market"
+        }
+      ],
+      "narrative_cells": [
+        "03170b70"
+      ],
+      "result_cells": [
+        "e529999e"
+      ],
+      "interpretation_cells": [
+        "e529999e"
+      ],
+      "review": {
+        "status": "approved",
+        "reviewer": "Codex /root/notebooks_sympy",
+        "reviewed_at": "2026-11-14T17:32:19.610302+00:00",
+        "notebook_sha256": "0079d50de1a8b54c1d8f17ec1bcb1c3da3c6e1fffb01d2c99da7cf3d2707dbd8",
+        "catalog_sha256": [
+          "1a2ed2ab7dd292a44cbb53e99eb8164496d2e8916cd2c7f59bd6a2af167bff2d",
+          "0510cea22965728fe58e9bf0ab337659a837fa9ccda72dbf65be5452cacd99f2"
+        ],
+        "purpose": "Verify the contract identity, one-dollar notional and binary mechanism before converting NO bids to YES asks.",
+        "finding": "The recorded market lookup supplies one binary one-dollar contract and acquisition provenance; it is not an exchange-wide or atomic snapshot."
+      }
+    },
+    {
+      "object": {
+        "schema": "main",
+        "name": "orderbook"
+      },
+      "notebook": "01_quoted_depth_depends_on_the_band.ipynb",
+      "sql": [
+        {
+          "cell": "4d242fdf",
+          "reference": "kalshi.main.orderbook"
+        }
+      ],
+      "narrative_cells": [
+        "1d43c482"
+      ],
+      "result_cells": [
+        "856abeb2"
+      ],
+      "interpretation_cells": [
+        "856abeb2"
+      ],
+      "review": {
+        "status": "approved",
+        "reviewer": "Codex /root/notebooks_sympy",
+        "reviewed_at": "2026-11-14T17:32:19.610302+00:00",
+        "notebook_sha256": "0079d50de1a8b54c1d8f17ec1bcb1c3da3c6e1fffb01d2c99da7cf3d2707dbd8",
+        "catalog_sha256": [
+          "1a2ed2ab7dd292a44cbb53e99eb8164496d2e8916cd2c7f59bd6a2af167bff2d",
+          "0510cea22965728fe58e9bf0ab337659a837fa9ccda72dbf65be5452cacd99f2"
+        ],
+        "purpose": "Measure local price-band depth separately from full-book depth, preserving YES/NO bid semantics.",
+        "finding": "The two-cent band contains13566.15 YES-bid and20030.54 implied-YES-ask contracts, with separate side denominators and no fill claim."
+      }
+    },
+    {
+      "object": {
+        "schema": "main",
+        "name": "series"
+      },
+      "notebook": "02_discover_contracts_with_source_context.ipynb",
+      "sql": [
+        {
+          "cell": "discovery-reference",
+          "reference": "kalshi.main.series"
+        }
+      ],
+      "narrative_cells": [
+        "discovery-context"
+      ],
+      "result_cells": [
+        "series-display"
+      ],
+      "interpretation_cells": [
+        "discovery-retrieval"
+      ],
+      "review": {
+        "status": "approved",
+        "reviewer": "Codex /root/notebooks_sympy",
+        "reviewed_at": "2026-11-14T17:32:19.610302+00:00",
+        "notebook_sha256": "6e90c663ba63b4bfc4dbadaad87af3b8083b17f02ed659d9fce89d935a97a41e",
+        "catalog_sha256": [
+          "1a2ed2ab7dd292a44cbb53e99eb8164496d2e8916cd2c7f59bd6a2af167bff2d",
+          "0510cea22965728fe58e9bf0ab337659a837fa9ccda72dbf65be5452cacd99f2"
+        ],
+        "purpose": "Find a recurring series and its key before retrieving contracts.",
+        "finding": "Two fictional series distinguish daily Climate DEMOWX from weekly Energy DEMOPOWER; DEMOWX explicitly drives the subsequent contract/event queries."
+      }
+    },
+    {
+      "object": {
+        "schema": "main",
+        "name": "exchange_status"
+      },
+      "notebook": "02_discover_contracts_with_source_context.ipynb",
+      "sql": [
+        {
+          "cell": "discovery-reference",
+          "reference": "kalshi.main.exchange_status"
+        }
+      ],
+      "narrative_cells": [
+        "discovery-context"
+      ],
+      "result_cells": [
+        "venues-display"
+      ],
+      "interpretation_cells": [
+        "discovery-interpretation"
+      ],
+      "review": {
+        "status": "approved",
+        "reviewer": "Codex /root/notebooks_sympy",
+        "reviewed_at": "2026-11-14T17:32:19.610302+00:00",
+        "notebook_sha256": "6e90c663ba63b4bfc4dbadaad87af3b8083b17f02ed659d9fce89d935a97a41e",
+        "catalog_sha256": [
+          "1a2ed2ab7dd292a44cbb53e99eb8164496d2e8916cd2c7f59bd6a2af167bff2d",
+          "0510cea22965728fe58e9bf0ab337659a837fa9ccda72dbf65be5452cacd99f2"
+        ],
+        "purpose": "Separate venue-level trading availability from the exchange-wide flag.",
+        "finding": "Overall trading is active while one of two fictional venues is paused. No market-to-venue mapping is inferred."
+      }
+    },
+    {
+      "object": {
+        "schema": "main",
+        "name": "markets"
+      },
+      "notebook": "02_discover_contracts_with_source_context.ipynb",
+      "sql": [
+        {
+          "cell": "discovery-markets",
+          "reference": "kalshi.main.markets"
+        }
+      ],
+      "narrative_cells": [
+        "discovery-retrieval"
+      ],
+      "result_cells": [
+        "screen-display"
+      ],
+      "interpretation_cells": [
+        "discovery-interpretation"
+      ],
+      "review": {
+        "status": "approved",
+        "reviewer": "Codex /root/notebooks_sympy",
+        "reviewed_at": "2026-11-14T17:32:19.610302+00:00",
+        "notebook_sha256": "6e90c663ba63b4bfc4dbadaad87af3b8083b17f02ed659d9fce89d935a97a41e",
+        "catalog_sha256": [
+          "1a2ed2ab7dd292a44cbb53e99eb8164496d2e8916cd2c7f59bd6a2af167bff2d",
+          "0510cea22965728fe58e9bf0ab337659a837fa9ccda72dbf65be5452cacd99f2"
+        ],
+        "purpose": "Keep all discovered contracts while screening lifecycle, declared sources and trailing-day volume.",
+        "finding": "Six returned contracts produce a three-contract default shortlist; the source-less high-volume event and closed contract remain visibly excluded."
+      }
+    },
+    {
+      "object": {
+        "schema": "main",
+        "name": "events"
+      },
+      "notebook": "02_discover_contracts_with_source_context.ipynb",
+      "sql": [
+        {
+          "cell": "discovery-events",
+          "reference": "kalshi.main.events"
+        }
+      ],
+      "narrative_cells": [
+        "discovery-retrieval"
+      ],
+      "result_cells": [
+        "events-display"
+      ],
+      "interpretation_cells": [
+        "discovery-interpretation"
+      ],
+      "review": {
+        "status": "approved",
+        "reviewer": "Codex /root/notebooks_sympy",
+        "reviewed_at": "2026-11-14T17:32:19.610302+00:00",
+        "notebook_sha256": "6e90c663ba63b4bfc4dbadaad87af3b8083b17f02ed659d9fce89d935a97a41e",
+        "catalog_sha256": [
+          "1a2ed2ab7dd292a44cbb53e99eb8164496d2e8916cd2c7f59bd6a2af167bff2d",
+          "0510cea22965728fe58e9bf0ab337659a837fa9ccda72dbf65be5452cacd99f2"
+        ],
+        "purpose": "Use a bounded event list to enrich related market contracts.",
+        "finding": "Three event rows reconcile with the details, preserve event identity and drive exactly three metadata requests."
+      }
+    },
+    {
+      "object": {
+        "schema": "main",
+        "name": "event"
+      },
+      "notebook": "02_discover_contracts_with_source_context.ipynb",
+      "sql": [
+        {
+          "cell": "discovery-detail",
+          "reference": "kalshi.main.event"
+        }
+      ],
+      "narrative_cells": [
+        "discovery-retrieval"
+      ],
+      "result_cells": [
+        "events-display"
+      ],
+      "interpretation_cells": [
+        "discovery-interpretation"
+      ],
+      "review": {
+        "status": "approved",
+        "reviewer": "Codex /root/notebooks_sympy",
+        "reviewed_at": "2026-11-14T17:32:19.610302+00:00",
+        "notebook_sha256": "6e90c663ba63b4bfc4dbadaad87af3b8083b17f02ed659d9fce89d935a97a41e",
+        "catalog_sha256": [
+          "1a2ed2ab7dd292a44cbb53e99eb8164496d2e8916cd2c7f59bd6a2af167bff2d",
+          "0510cea22965728fe58e9bf0ab337659a837fa9ccda72dbf65be5452cacd99f2"
+        ],
+        "purpose": "Inspect whether a threshold-event contract group is mutually exclusive.",
+        "finding": "All three detailed events agree with list titles and say mutually_exclusive=false, so their threshold markets cannot be treated as a probability partition."
+      }
+    },
+    {
+      "object": {
+        "schema": "main",
+        "name": "event_metadata"
+      },
+      "notebook": "02_discover_contracts_with_source_context.ipynb",
+      "sql": [
+        {
+          "cell": "discovery-sources",
+          "reference": "kalshi.main.event_metadata"
+        }
+      ],
+      "narrative_cells": [
+        "discovery-policy"
+      ],
+      "result_cells": [
+        "events-display"
+      ],
+      "interpretation_cells": [
+        "discovery-interpretation"
+      ],
+      "review": {
+        "status": "approved",
+        "reviewer": "Codex /root/notebooks_sympy",
+        "reviewed_at": "2026-11-14T17:32:19.610302+00:00",
+        "notebook_sha256": "6e90c663ba63b4bfc4dbadaad87af3b8083b17f02ed659d9fce89d935a97a41e",
+        "catalog_sha256": [
+          "1a2ed2ab7dd292a44cbb53e99eb8164496d2e8916cd2c7f59bd6a2af167bff2d",
+          "0510cea22965728fe58e9bf0ab337659a837fa9ccda72dbf65be5452cacd99f2"
+        ],
+        "purpose": "Measure declared-source coverage without multiplying contract rows.",
+        "finding": "Two, one and zero sources remain distinct; the empty-source metadata row stays visible, and grouping sources before joining preserves the six-contract denominator."
+      }
+    },
+    {
+      "object": {
+        "schema": "main",
+        "name": "trades"
+      },
+      "notebook": "03_reconcile_trades_and_candles.ipynb",
+      "sql": [
+        {
+          "cell": "tape-fetch",
+          "reference": "kalshi.main.trades"
+        }
+      ],
+      "narrative_cells": [
+        "tape-context"
+      ],
+      "result_cells": [
+        "tape-charts"
+      ],
+      "interpretation_cells": [
+        "tape-interpretation"
+      ],
+      "review": {
+        "status": "approved",
+        "reviewer": "Codex /root/notebooks_sympy",
+        "reviewed_at": "2026-11-14T17:32:19.610302+00:00",
+        "notebook_sha256": "18a996d233ecd717ffbf014bf5d875f8d9250f828c3286457371a3e291d11871",
+        "catalog_sha256": [
+          "1a2ed2ab7dd292a44cbb53e99eb8164496d2e8916cd2c7f59bd6a2af167bff2d",
+          "0510cea22965728fe58e9bf0ab337659a837fa9ccda72dbf65be5452cacd99f2"
+        ],
+        "purpose": "Compute execution-weighted prices from the complete synthetic tape.",
+        "finding": "Six unique trades retain120contracts and81USD price-times-quantity numerator at both60and120-minute reporting widths; whole-window VWAP is67.5cents."
+      }
+    },
+    {
+      "object": {
+        "schema": "main",
+        "name": "candlesticks"
+      },
+      "notebook": "03_reconcile_trades_and_candles.ipynb",
+      "sql": [
+        {
+          "cell": "tape-fetch",
+          "reference": "kalshi.main.candlesticks"
+        }
+      ],
+      "narrative_cells": [
+        "tape-reconcile"
+      ],
+      "result_cells": [
+        "hourly-display"
+      ],
+      "interpretation_cells": [
+        "tape-interpretation"
+      ],
+      "review": {
+        "status": "approved",
+        "reviewer": "Codex /root/notebooks_sympy",
+        "reviewed_at": "2026-11-14T17:32:19.610302+00:00",
+        "notebook_sha256": "18a996d233ecd717ffbf014bf5d875f8d9250f828c3286457371a3e291d11871",
+        "catalog_sha256": [
+          "1a2ed2ab7dd292a44cbb53e99eb8164496d2e8916cd2c7f59bd6a2af167bff2d",
+          "0510cea22965728fe58e9bf0ab337659a837fa9ccda72dbf65be5452cacd99f2"
+        ],
+        "purpose": "Reconcile hourly candle volume and last price against the trade tape, including no-trade periods.",
+        "finding": "All four hourly volumes/closes reconcile. One quiet hour has zero contracts and NULL price rather than a fabricated zero price."
+      }
+    },
+    {
+      "object": {
+        "schema": "main",
+        "name": "historical_cutoff"
+      },
+      "notebook": "04_route_across_the_archive_boundary.ipynb",
+      "sql": [
+        {
+          "cell": "archive-boundary",
+          "reference": "kalshi.main.historical_cutoff"
+        }
+      ],
+      "narrative_cells": [
+        "archive-context"
+      ],
+      "result_cells": [
+        "routing-display"
+      ],
+      "interpretation_cells": [
+        "archive-context"
+      ],
+      "review": {
+        "status": "approved",
+        "reviewer": "Codex /root/notebooks_sympy",
+        "reviewed_at": "2026-11-14T17:32:19.610302+00:00",
+        "notebook_sha256": "36eb57e60fe3fa625484ddaacb8ac658987f07815eefa16939fb930a9fa63cbe",
+        "catalog_sha256": [
+          "1a2ed2ab7dd292a44cbb53e99eb8164496d2e8916cd2c7f59bd6a2af167bff2d",
+          "0510cea22965728fe58e9bf0ab337659a837fa9ccda72dbf65be5452cacd99f2"
+        ],
+        "purpose": "Determine live-versus-archive responsibility separately for markets and trades.",
+        "finding": "Two illustrated timestamps route markets to live and trades to archive because their boundaries differ; equality uses the live side. No private order/position API is implied."
+      }
+    },
+    {
+      "object": {
+        "schema": "main",
+        "name": "historical_markets"
+      },
+      "notebook": "04_route_across_the_archive_boundary.ipynb",
+      "sql": [
+        {
+          "cell": "archive-markets",
+          "reference": "kalshi.main.historical_markets"
+        }
+      ],
+      "narrative_cells": [
+        "archive-retrieval"
+      ],
+      "result_cells": [
+        "archive-charts"
+      ],
+      "interpretation_cells": [
+        "archive-interpretation"
+      ],
+      "review": {
+        "status": "approved",
+        "reviewer": "Codex /root/notebooks_sympy",
+        "reviewed_at": "2026-11-14T17:32:19.610302+00:00",
+        "notebook_sha256": "36eb57e60fe3fa625484ddaacb8ac658987f07815eefa16939fb930a9fa63cbe",
+        "catalog_sha256": [
+          "1a2ed2ab7dd292a44cbb53e99eb8164496d2e8916cd2c7f59bd6a2af167bff2d",
+          "0510cea22965728fe58e9bf0ab337659a837fa9ccda72dbf65be5452cacd99f2"
+        ],
+        "purpose": "Bound the archived contract set and obtain the actual settlement value before comparing historical prices.",
+        "finding": "Three fictional settled contracts provide binary payoffs and lifetime volumes; a30-cent gap flags two while60cents flags one."
+      }
+    },
+    {
+      "object": {
+        "schema": "main",
+        "name": "historical_trades"
+      },
+      "notebook": "04_route_across_the_archive_boundary.ipynb",
+      "sql": [
+        {
+          "cell": "archive-trades",
+          "reference": "kalshi.main.historical_trades"
+        }
+      ],
+      "narrative_cells": [
+        "archive-comparison"
+      ],
+      "result_cells": [
+        "archive-charts"
+      ],
+      "interpretation_cells": [
+        "archive-interpretation"
+      ],
+      "review": {
+        "status": "approved",
+        "reviewer": "Codex /root/notebooks_sympy",
+        "reviewed_at": "2026-11-14T17:32:19.610302+00:00",
+        "notebook_sha256": "36eb57e60fe3fa625484ddaacb8ac658987f07815eefa16939fb930a9fa63cbe",
+        "catalog_sha256": [
+          "1a2ed2ab7dd292a44cbb53e99eb8164496d2e8916cd2c7f59bd6a2af167bff2d",
+          "0510cea22965728fe58e9bf0ab337659a837fa9ccda72dbf65be5452cacd99f2"
+        ],
+        "purpose": "Compute archived execution VWAP and verify contract quantities before settlement comparisons.",
+        "finding": "Six unique trades produce40contracts per market; VWAP is kept distinct from settlement and last price, without a return or fill claim."
+      }
+    },
+    {
+      "object": {
+        "schema": "main",
+        "name": "historical_candlesticks"
+      },
+      "notebook": "04_route_across_the_archive_boundary.ipynb",
+      "sql": [
+        {
+          "cell": "archive-candles",
+          "reference": "kalshi.main.historical_candlesticks"
+        }
+      ],
+      "narrative_cells": [
+        "archive-comparison"
+      ],
+      "result_cells": [
+        "archive-charts"
+      ],
+      "interpretation_cells": [
+        "archive-interpretation"
+      ],
+      "review": {
+        "status": "approved",
+        "reviewer": "Codex /root/notebooks_sympy",
+        "reviewed_at": "2026-11-14T17:32:19.610302+00:00",
+        "notebook_sha256": "36eb57e60fe3fa625484ddaacb8ac658987f07815eefa16939fb930a9fa63cbe",
+        "catalog_sha256": [
+          "1a2ed2ab7dd292a44cbb53e99eb8164496d2e8916cd2c7f59bd6a2af167bff2d",
+          "0510cea22965728fe58e9bf0ab337659a837fa9ccda72dbf65be5452cacd99f2"
+        ],
+        "purpose": "Compare archived last candle prices and volume with tape and settlement.",
+        "finding": "Six hourly candles reproduce each market\u2019s40-contract tape and last trade, while20/45/75-cent settlement gaps remain explicit."
+      }
+    }
+  ]
+}

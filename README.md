@@ -643,4 +643,5 @@ and subject to [Kalshi's terms of use](https://kalshi.com/terms). See
 
 ## Notebooks
 
-[Executed quoted-depth walkthrough with recorded public data](notebooks/README.md).
+[Executed depth, discovery, tape/candle and archive walkthroughs](notebooks/README.md),
+with recorded public data and explicitly synthetic local API fixtures.

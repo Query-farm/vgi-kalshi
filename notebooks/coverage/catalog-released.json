@@ -1,0 +1,187 @@
+{
+  "schema_version": 1,
+  "repository": "Query-farm/vgi-kalshi",
+  "revision": "v1.3.0",
+  "captured_at": "2026-11-14T17:22:21.046207+00:00",
+  "default_schema": "main",
+  "scope": "all_public_functions_and_tables",
+  "complete": true,
+  "evidence": [
+    {
+      "path": "coverage/released-functions.json",
+      "sha256": "914b67da695c4e296922d3d4ac07a4cb25ee151b68cfd46c155a96d231292f5e",
+      "description": "Complete worker-filtered functions catalog export through actual published Haybarn"
+    },
+    {
+      "path": "coverage/released-tables.json",
+      "sha256": "13eb6e0c259b31921cc31ed375204c0b058a21b94cbb39d531066af30d2691ef",
+      "description": "Complete worker-filtered tables catalog export through actual published Haybarn"
+    }
+  ],
+  "objects": [
+    {
+      "schema": "main",
+      "name": "all_exchange_status",
+      "kind": "function",
+      "signatures": [
+        "all_exchange_status()"
+      ],
+      "authentication": "optional",
+      "access": "read"
+    },
+    {
+      "schema": "main",
+      "name": "all_historical_cutoff",
+      "kind": "function",
+      "signatures": [
+        "all_historical_cutoff()"
+      ],
+      "authentication": "optional",
+      "access": "read"
+    },
+    {
+      "schema": "main",
+      "name": "all_series",
+      "kind": "function",
+      "signatures": [
+        "all_series()"
+      ],
+      "authentication": "optional",
+      "access": "read"
+    },
+    {
+      "schema": "main",
+      "name": "candlesticks",
+      "kind": "function",
+      "signatures": [
+        "candlesticks(VARCHAR, VARCHAR, BIGINT, BIGINT, BIGINT)"
+      ],
+      "authentication": "optional",
+      "access": "read"
+    },
+    {
+      "schema": "main",
+      "name": "event",
+      "kind": "function",
+      "signatures": [
+        "event(VARCHAR, BIGINT)"
+      ],
+      "authentication": "optional",
+      "access": "read"
+    },
+    {
+      "schema": "main",
+      "name": "event_metadata",
+      "kind": "function",
+      "signatures": [
+        "event_metadata(VARCHAR, BIGINT)"
+      ],
+      "authentication": "optional",
+      "access": "read"
+    },
+    {
+      "schema": "main",
+      "name": "events",
+      "kind": "function",
+      "signatures": [
+        "events(VARCHAR, VARCHAR, BIGINT)"
+      ],
+      "authentication": "optional",
+      "access": "read"
+    },
+    {
+      "schema": "main",
+      "name": "historical_candlesticks",
+      "kind": "function",
+      "signatures": [
+        "historical_candlesticks(VARCHAR, BIGINT, BIGINT, BIGINT)"
+      ],
+      "authentication": "optional",
+      "access": "read"
+    },
+    {
+      "schema": "main",
+      "name": "historical_markets",
+      "kind": "function",
+      "signatures": [
+        "historical_markets(VARCHAR, VARCHAR)"
+      ],
+      "authentication": "optional",
+      "access": "read"
+    },
+    {
+      "schema": "main",
+      "name": "historical_trades",
+      "kind": "function",
+      "signatures": [
+        "historical_trades(VARCHAR, BIGINT, BIGINT, BIGINT)"
+      ],
+      "authentication": "optional",
+      "access": "read"
+    },
+    {
+      "schema": "main",
+      "name": "market",
+      "kind": "function",
+      "signatures": [
+        "market(VARCHAR, BIGINT)"
+      ],
+      "authentication": "optional",
+      "access": "read"
+    },
+    {
+      "schema": "main",
+      "name": "markets",
+      "kind": "function",
+      "signatures": [
+        "markets(VARCHAR, VARCHAR, BOOLEAN, VARCHAR)"
+      ],
+      "authentication": "optional",
+      "access": "read"
+    },
+    {
+      "schema": "main",
+      "name": "orderbook",
+      "kind": "function",
+      "signatures": [
+        "orderbook(VARCHAR, BIGINT, BIGINT)"
+      ],
+      "authentication": "optional",
+      "access": "read"
+    },
+    {
+      "schema": "main",
+      "name": "trades",
+      "kind": "function",
+      "signatures": [
+        "trades(VARCHAR, BIGINT, BIGINT, BIGINT, BIGINT)"
+      ],
+      "authentication": "optional",
+      "access": "read"
+    },
+    {
+      "schema": "main",
+      "name": "exchange_status",
+      "kind": "table",
+      "signatures": [],
+      "authentication": "optional",
+      "access": "read"
+    },
+    {
+      "schema": "main",
+      "name": "historical_cutoff",
+      "kind": "table",
+      "signatures": [],
+      "authentication": "optional",
+      "access": "read"
+    },
+    {
+      "schema": "main",
+      "name": "series",
+      "kind": "table",
+      "signatures": [],
+      "authentication": "optional",
+      "access": "read"
+    }
+  ]
+}

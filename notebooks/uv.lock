@@ -1932,8 +1932,8 @@ wheels = [
 
 [[package]]
 name = "vgi-example-notebooks"
-version = "0.2.0"
-source = { git = "https://github.com/Query-farm/vgi-example-notebooks?rev=v0.2.0#b3f8cd7fa5daae2757dd19a8ec1d2be74dc3141a" }
+version = "0.3.0"
+source = { git = "https://github.com/Query-farm/vgi-example-notebooks?rev=v0.3.0#8adc689581253773989ea3cd53fcc1c971fa0312" }
 dependencies = [
     { name = "haybarn" },
     { name = "ipython" },
@@ -1963,7 +1963,7 @@ dependencies = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "vgi-example-notebooks", extras = ["runner"], git = "https://github.com/Query-farm/vgi-example-notebooks?rev=v0.2.0" }]
+requires-dist = [{ name = "vgi-example-notebooks", extras = ["runner"], git = "https://github.com/Query-farm/vgi-example-notebooks?rev=v0.3.0" }]
 
 [[package]]
 name = "wcwidth"
