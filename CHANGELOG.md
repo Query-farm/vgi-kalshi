@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### Dependencies
+
+- vgi-python 0.51.0 -> 0.51.1 (protocol 3.3.0) in pyproject.toml and both
+  PEP-723 headers; `uv lock --upgrade` refreshes every other dependency to its
+  latest release (pyarrow 26.0.1, httpx2 2.16.0, duckdb 2.0.0 for the dev
+  group, pytest 9.2.0, ...).
+- The explicit `numpy` dependency is gone: from 0.51.1 the SDK's `haybarn`
+  extra depends on numpy itself, which the filter-binding UDF needs.
+- ruff moves from the 0.16 to the 0.17 minor (0.17.5); the explicitly selected
+  rule set reports nothing new on this tree.
+
 ### Fixed
 
 - `historical_candlesticks` returned no rows for almost every archived market.
