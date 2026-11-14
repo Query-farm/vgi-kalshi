@@ -1,59 +1,74 @@
-# Kalshi notebooks
+# Kalshi examples
 
-[01 · Quoted depth depends on the price band](01_quoted_depth_depends_on_the_band.ipynb) converts the YES/NO bid ladders of one public book to a common YES perspective and measures quoted quantities within a local price-distance band.
+[01 · How much depth is near the best quote?](01_quoted_depth_depends_on_the_band.ipynb)
+compares local quoted depth with the full returned order book. It preserves Kalshi's
+YES/NO bid semantics, exact decimal quantities, source provenance and missing sides.
 
-## Run
+[![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Query-farm/vgi-kalshi/blob/main/notebooks/01_quoted_depth_depends_on_the_band.ipynb)
 
-Install [uv](https://docs.astral.sh/uv/) and Git. Python 3.13–3.14 is required; uv can install it. Initial package, source and extension downloads require internet. No local worker checkout or API credentials are needed.
+In Colab, choose **Runtime → Run all**. Setup installs shared tools and retrieves
+verified companions automatically. No worker checkout, Drive mount or API key is
+needed. A compatible Python runtime (3.11+) runs the notebook; uv manages the worker's
+separate Python 3.13 environment.
+
+Locally, from this directory:
 
 ```sh
-cd notebooks
 uv sync --locked
-uv run --locked python execute.py --timeout 300
+uv run --locked vgi-notebooks --timeout 300
+uv run --locked vgi-notebooks --parameters '{"BAND_CENTS":10}' --output-dir artifacts/band-10
+uv run --locked vgi-notebooks --parameters '{"DATA_MODE":"live"}' --output-dir artifacts/live
 ```
 
-Haybarn 2.0.0rc11 runs the notebook. The visible literal ATTACH uses `uvx --from git+https://github.com/Query-farm/vgi-kalshi@76094e91238d10683b992646ea18851c85ff1e86 ... vgi-kalshi`, with explicit vgi-python 0.51.0, vgi-rpc 0.53.1, httpx 0.28.1, httpx2 2.13.1, pyarrow 25.0.1, numpy 2.5.4 and internal worker haybarn 1.5.5rc1 pins. The internal engine supports worker filter binding and is separate from the notebook's Haybarn 2.0 engine. This is a Git install, not a PyPI worker package. uv caches the immutable revision and its environment. Upgrade the pin deliberately and validate default, experiment and live runs.
-
-Optional editor kernel:
+For Jupyter or VS Code, select this environment or register its kernel:
 
 ```sh
-uv run --locked python -m ipykernel install --user --name vgi-kalshi-notebooks --display-name "Python (vgi-kalshi notebooks)"
+uv run --locked python -m ipykernel install --user --name vgi-kalshi-notebooks --display-name 'Python (Kalshi examples)'
 ```
 
-Use this directory as working directory and Restart Kernel → Run All. The runner creates a temporary kernel and only replaces saved outputs after every cell succeeds.
+The visible connection uses the published Kalshi **v1.3.0** release, with no transitive
+dependency overrides in the SQL. Shared tooling is pinned to **v0.1.0** of
+[vgi-example-notebooks](https://github.com/Query-farm/vgi-example-notebooks), which
+owns the [standard](https://github.com/Query-farm/vgi-example-notebooks/blob/v0.1.0/docs/standard.md),
+runner, consistent branding, SVG theme and Colab companion retrieval. Override runs
+require a separate destination and cannot replace the last successful default.
 
-## Experiment and live snapshot
+## Data and interpretation
 
-```sh
-uv run --locked python execute.py --parameters '{"BAND_CENTS":10}' --output-dir artifacts/band-10
-uv run --locked python execute.py --parameters '{"DATA_MODE":"live"}' --output-dir artifacts/live
-```
+Default mode replays two complete, unmodified anonymous public API responses,
+captured sequentially on **2026-11-14 07:43:55 UTC**. `fixtures/manifest.json` records
+exact requests, capture clocks and body hashes. The market is illustrative;
+it was not selected as an exchange-wide liquidity winner. The two responses are
+not an atomic snapshot. `replay_source.py` serves only the recorded request pairs
+on loopback, with no live fallback. Inherited SQL credentials are isolated before
+connection creation; ATTACH explicitly uses `AUTH 'off'`.
 
-Restore `BAND_CENTS=2`, `DATA_MODE="replay"` and the recorded ticker for defaults. Parameter overrides require a separate destination. Branding, docs, fixture bodies, request audit, helper and lock accompany executed copies. Generated logs, images, experiments and environments are ignored.
+The worker materializes one market and one full order book once. Every subsequent
+band calculation, chart and comparison uses those in-memory tables. A NO bid at p
+maps to a YES ask at 1−p only for the verified one-dollar binary contract. Quantities
+are contracts, including fractional sizes, not traders or orders. Quoted sizes do
+not guarantee fills or estimate returns. Fees, latency, queue position and future
+price changes are outside the walkthrough.
 
-Live uses the same exact market unless `MARKET_TICKER` is changed explicitly. The recorded contract closes at 2026-11-14 22:00:00 UTC; later live reads can have an empty or unavailable book. Empty sides preserve missing best quotes and zero returned quantities, and charts requiring levels are omitted. Unknown tickers or required-source failures raise errors. There is no synthetic fallback. The one-dollar binary-contract condition is checked before applying the reciprocal-price calculation.
+Each side's band is inclusive and measured from its own best quote. Its share uses
+that side's full positive-size book as denominator. Missing best quotes remain
+unavailable rather than becoming zero. The charts show a near-quote view and a full
+book view with explicitly different quantity scales; both use embedded SVG output.
 
-## Recording and request bounds
+The recorded contract closes at **2026-11-14 22:00 UTC**. Later live reads may return
+an empty/unavailable book. Live mode never substitutes recorded data after an error;
+change MARKET_TICKER explicitly to inspect another market. Reset DATA_MODE='replay',
+BAND_CENTS=2 and the recorded ticker to reproduce the saved example.
 
-The fixtures are complete, unmodified anonymous public API responses, captured sequentially from 2026-11-14 07:43:55.021061 through 07:43:55.243246 UTC. `fixtures/manifest.json` records exact URLs, request start/completion clocks, status, response headers, bytes and SHA-256 hashes. One `/markets/{ticker}` response verifies market identity; one `/markets/orderbooks?tickers=...` response contains its entire returned book. The ticker is an illustrative existing market, not an exchange-wide liquidity winner. The recording does not contain private data or credentials; see the root NOTICE for source terms.
+## Verification
 
-`replay_source.py` verifies body hashes and serves only those two exact paths/query pairs on an ephemeral loopback port. Unknown requests fail without forwarding. The worker's documented `KALSHI_BASE_URL` setting is explicitly selected and restored during cleanup. ATTACH `auth 'off'` never signs requests. Full-book materialization uses `depth=>0` and `cache_ttl=>0`; no SQL LIMIT is presented as an HTTP bound. Replay checks exactly two requests and exact Decimal equality against every original level. The request audit is saved under `artifacts/request-audit.json`. Live may retry transient failures using the worker's bounded retry policy; it does not promise exactly two network attempts.
+Default and wider-band examples, a fresh notebook-only Python 3.12 environment,
+request/hash checks and rendered charts are validated. The shared runner rejects
+unexpected warnings, saved errors and machine-specific paths. A narrow workaround
+handles the known JupySQL parser-docstring warning without hiding query failures.
+A hosted Google Colab session has not been manually exercised; the direct link and
+fresh-runtime bootstrap are tested separately.
 
-The market and book responses are not atomic. The displayed clock is acquisition completion, not an exchange event timestamp. The analysis constructs its spread exclusively from the book, not a mixture of separately sampled summary quotes. No other requests are issued to compute charts or change the local band.
-
-## Reading the results
-
-Kalshi's [official orderbook documentation](https://docs.kalshi.com/getting_started/orderbook_responses) describes both arrays as bids. For a one-dollar binary contract, a NO bid at p is equivalent to a YES ask at 1−p; its quoted quantity is retained. A missing side has no best quote and cannot produce a two-sided spread. Counts are contracts, including fractional quantities, not order counts or traders. Missing/invalid values fail checks; zero-size levels are reported and excluded.
-
-Price and quantity calculations remain SQL decimals. Charts use floating point only for drawing. Each side measures distance from its own best quote, includes the boundary, and uses its own full positive-size book as the share denominator. Empty selected quantity is distinct from an unavailable quote. Wider bands can only retain or add levels and contracts in a fixed snapshot.
-
-Resting quotes do not guarantee fills. Fees, queue position, cancellations, latency, counterparty behavior and changing prices are outside this static analysis. It estimates neither outcome probabilities nor trading returns and does not place orders. The supported live path remains public and read-only.
-
-## SQL credential isolation
-
-The notebook creates Haybarn with a fresh temporary `secret_directory` and
-`allow_persistent_secrets=False` before attaching workers. It fully drains and
-checks an empty secret inventory. This example needs no saved SQL credential;
-its explicit public-data or local-fixture configuration remains in effect.
-Cleanup removes the temporary directory after closing the connection.
-Existing user SQL secrets are neither read, modified nor deleted.
+Further planned narratives cover series/events/market discovery, trades versus
+candlestick aggregation, and the live/archive cutoff. The first notebook is the
+visual and execution pilot for those additional examples.
