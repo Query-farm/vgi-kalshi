@@ -48,3 +48,12 @@ Kalshi's [official orderbook documentation](https://docs.kalshi.com/getting_star
 Price and quantity calculations remain SQL decimals. Charts use floating point only for drawing. Each side measures distance from its own best quote, includes the boundary, and uses its own full positive-size book as the share denominator. Empty selected quantity is distinct from an unavailable quote. Wider bands can only retain or add levels and contracts in a fixed snapshot.
 
 Resting quotes do not guarantee fills. Fees, queue position, cancellations, latency, counterparty behavior and changing prices are outside this static analysis. It estimates neither outcome probabilities nor trading returns and does not place orders. The supported live path remains public and read-only.
+
+## SQL credential isolation
+
+The notebook creates Haybarn with a fresh temporary `secret_directory` and
+`allow_persistent_secrets=False` before attaching workers. It fully drains and
+checks an empty secret inventory. This example needs no saved SQL credential;
+its explicit public-data or local-fixture configuration remains in effect.
+Cleanup removes the temporary directory after closing the connection.
+Existing user SQL secrets are neither read, modified nor deleted.
