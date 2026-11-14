@@ -37,9 +37,9 @@ uv run --locked python -m ipykernel install --user --name vgi-kalshi-notebooks -
 ```
 
 The visible connection uses the published Kalshi **v1.3.0** release, with no transitive
-dependency overrides in the SQL. Shared tooling is pinned to **v0.3.6** of
+dependency overrides in the SQL. Shared tooling is pinned to **v0.3.8** of
 [vgi-example-notebooks](https://github.com/Query-farm/vgi-example-notebooks), which
-owns the [standard](https://github.com/Query-farm/vgi-example-notebooks/blob/v0.3.6/docs/standard.md),
+owns the [standard](https://github.com/Query-farm/vgi-example-notebooks/blob/v0.3.8/docs/standard.md),
 runner, consistent branding, SVG theme and Colab companion retrieval. Override runs
 require a separate destination and cannot replace the last successful default.
 

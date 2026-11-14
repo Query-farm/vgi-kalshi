@@ -1,0 +1,11 @@
+{
+  "repository": "Query-farm/vgi-kalshi",
+  "title": "Kalshi Prediction Markets",
+  "subtitle": "Live and archived Kalshi prediction markets, with order books, prices, trades and settlements.",
+  "worker_release": "v1.3.0",
+  "provenance": "Exact catalog tags from immutable released Python source; public tag verified",
+  "source_url": "https://github.com/Query-farm/vgi-kalshi/blob/7891b7c1411fc3475ad191532dc188fd9d383818/vgi_kalshi/worker.py#L294",
+  "source_sha256": "eed75739b1b0f70aa603505ab0e02b7105a3d1db8b67808ecdee07e62295a504",
+  "source_path": "vgi_kalshi/worker.py",
+  "source_commit": "7891b7c1411fc3475ad191532dc188fd9d383818"
+}
