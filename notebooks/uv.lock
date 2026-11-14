@@ -1923,8 +1923,8 @@ wheels = [
 
 [[package]]
 name = "vgi-example-notebooks"
-version = "0.1.0"
-source = { git = "https://github.com/Query-farm/vgi-example-notebooks?rev=v0.1.0#440dab199fa7865adba8e4e927db7a0ae0b1bb3c" }
+version = "0.1.1"
+source = { git = "https://github.com/Query-farm/vgi-example-notebooks?rev=v0.1.1#9942b8ea0e90c6c4297e66ce785c87c154de4c80" }
 dependencies = [
     { name = "haybarn" },
     { name = "ipykernel" },
@@ -1947,7 +1947,7 @@ dependencies = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "vgi-example-notebooks", git = "https://github.com/Query-farm/vgi-example-notebooks?rev=v0.1.0" }]
+requires-dist = [{ name = "vgi-example-notebooks", git = "https://github.com/Query-farm/vgi-example-notebooks?rev=v0.1.1" }]
 
 [[package]]
 name = "wcwidth"

@@ -27,9 +27,9 @@ uv run --locked python -m ipykernel install --user --name vgi-kalshi-notebooks -
 ```
 
 The visible connection uses the published Kalshi **v1.3.0** release, with no transitive
-dependency overrides in the SQL. Shared tooling is pinned to **v0.1.0** of
+dependency overrides in the SQL. Shared tooling is pinned to **v0.1.1** of
 [vgi-example-notebooks](https://github.com/Query-farm/vgi-example-notebooks), which
-owns the [standard](https://github.com/Query-farm/vgi-example-notebooks/blob/v0.1.0/docs/standard.md),
+owns the [standard](https://github.com/Query-farm/vgi-example-notebooks/blob/v0.1.1/docs/standard.md),
 runner, consistent branding, SVG theme and Colab companion retrieval. Override runs
 require a separate destination and cannot replace the last successful default.
 
@@ -53,7 +53,10 @@ price changes are outside the walkthrough.
 Each side's band is inclusive and measured from its own best quote. Its share uses
 that side's full positive-size book as denominator. Missing best quotes remain
 unavailable rather than becoming zero. The charts show a near-quote view and a full
-book view with explicitly different quantity scales; both use embedded SVG output.
+book view with explicitly different quantity scales; both use SVG output. The
+publication runner retains native SVG and writes matching
+files under `charts/` for GitHub's image renderer; those files belong in the same
+commit as the notebook. This avoids GitHub's native SVG byte-string artifacts.
 
 The recorded contract closes at **2026-11-14 22:00 UTC**. Later live reads may return
 an empty/unavailable book. Live mode never substitutes recorded data after an error;
