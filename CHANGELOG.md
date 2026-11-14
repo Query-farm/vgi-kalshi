@@ -16,6 +16,12 @@
   the `events()` and `event_metadata()` examples that scanned every event in
   the series now ask for open events, and `historical_markets()`'s first
   example takes the newest archive page instead of sorting the whole archive.
+- The `candlesticks()` example that fed every market in the series into
+  `candlesticks()` now feeds only open markets, and the whole-exchange open
+  interest rollup on `markets()` (a ~60 s scan of ~200k markets) is replaced by
+  the series' largest open-interest markets. vgi-lint --execute is now clean.
+- Example descriptions that called a `LIMIT 1` pick "the busiest open market"
+  now say "an actively traded open market": nothing orders by volume there.
 
 ### Documentation
 

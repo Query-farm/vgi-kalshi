@@ -29,7 +29,12 @@ from vgi.catalog.descriptors import Table
 
 from vgi_kalshi import __version__, auth
 from vgi_kalshi.historical import HISTORICAL_FUNCTIONS, SETTLED_VWAP_EXAMPLE, HistoricalCutoffFunction
-from vgi_kalshi.markets import EVENT_LADDER_EXAMPLE, MARKET_FUNCTIONS, OPEN_EVENTS_EXAMPLE
+from vgi_kalshi.markets import (
+    EVENT_LADDER_EXAMPLE,
+    MARKET_FUNCTIONS,
+    OPEN_EVENTS_EXAMPLE,
+    SERIES_CANDLES_EXAMPLE,
+)
 from vgi_kalshi.meta import column_comments, docs, examples, keywords
 from vgi_kalshi.reference import REFERENCE_FUNCTIONS, AllSeriesFunction, ExchangeStatusFunction
 from vgi_kalshi.schemas import EXCHANGE_STATUS_SCHEMA, HISTORICAL_CUTOFF_SCHEMA, SERIES_SCHEMA
@@ -58,15 +63,9 @@ _EXAMPLE_QUERIES = examples(
         "LATERAL kalshi.main.orderbook(m.ticker, cache_ttl => 30) o "
         "WHERE m.status = 'active' ORDER BY m.ticker, o.side, o.price_dollars",
     ),
+    SERIES_CANDLES_EXAMPLE,
     (
-        "Hourly candles for every market in a series",
-        "SELECT m.ticker, c.end_period_ts, c.price_close_dollars "
-        "FROM kalshi.main.markets('KXBTCD') m, "
-        "LATERAL kalshi.main.candlesticks(m.series_ticker, m.ticker, period_interval => 60) c "
-        "ORDER BY m.ticker, c.end_period_ts",
-    ),
-    (
-        "The most recent trades on the busiest open market in a series",
+        "The most recent trades on an actively traded open market in a series",
         "SELECT t.created_time, t.taker_side, t.yes_price_dollars, t.count_fp FROM ("
         "SELECT ticker FROM kalshi.main.markets('KXBTCD') WHERE status = 'active' "
         "AND volume_24h_fp > 100 LIMIT 1) m, "
@@ -77,7 +76,7 @@ _EXAMPLE_QUERIES = examples(
     EVENT_LADDER_EXAMPLE,
     SETTLED_VWAP_EXAMPLE,
     (
-        "The busiest open market's current quote",
+        "An actively traded open market's current quote",
         "SELECT ticker, status, yes_bid_dollars, yes_ask_dollars "
         "FROM kalshi.main.market((SELECT ticker FROM kalshi.main.markets('KXBTCD') "
         "WHERE status = 'active' AND volume_24h_fp > 100 LIMIT 1))",

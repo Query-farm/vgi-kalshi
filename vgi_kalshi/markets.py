@@ -305,11 +305,10 @@ MARKETS_DOCS = docs(
             "SELECT ticker, status FROM kalshi.main.markets('KXBTCD', status => 'open') ORDER BY ticker",
         ),
         (
-            "Which series carry the most open interest, across the whole exchange",
-            "SELECT regexp_extract(event_ticker, '^([A-Z0-9]+)', 1) AS series, count(*) AS markets, "
-            "sum(open_interest_fp) AS open_interest "
-            "FROM kalshi.main.markets('', status => 'open') "
-            "GROUP BY 1 ORDER BY open_interest DESC LIMIT 20",
+            "The open Bitcoin daily markets carrying the most open interest",
+            "SELECT ticker, floor_strike, open_interest_fp "
+            "FROM kalshi.main.markets('KXBTCD', status => 'open') "
+            "ORDER BY open_interest_fp DESC, ticker LIMIT 10",
         ),
         (
             "The implied probability curve for a price ladder, in strike order",
@@ -648,6 +647,18 @@ class OrderbookFunction(RowTransformFunction[OrderbookArgs]):
         )
 
 
+#: A composed example: `markets()` supplies each open market's series and ticker,
+#: `candlesticks()` its bars. Narrowed to open markets: the unfiltered scan walks the
+#: series' whole history first, long past any example timeout.
+SERIES_CANDLES_EXAMPLE = (
+    "Hourly candles for every open market in a series, driven by markets()",
+    "SELECT m.ticker, c.end_period_ts, c.price_close_dollars "
+    "FROM kalshi.main.markets('KXBTCD', status => 'open') m, LATERAL kalshi.main.candlesticks("
+    "m.series_ticker, m.ticker, period_interval => 60) c "
+    "ORDER BY m.ticker, c.end_period_ts",
+)
+
+
 @dataclass(slots=True, frozen=True, kw_only=True)
 class CandlestickArgs:
     """``candlesticks(series_ticker, ticker)`` plus a named period and window.
@@ -743,13 +754,7 @@ class CandlesticksFunction(RowTransformFunction[CandlestickArgs]):
                     "LATERAL kalshi.main.candlesticks(m.series_ticker, m.ticker, "
                     "period_interval => 60) c ORDER BY c.end_period_ts",
                 ),
-                (
-                    "Hourly candles for every market in a series, driven by markets()",
-                    "SELECT m.ticker, c.end_period_ts, c.price_close_dollars "
-                    "FROM kalshi.main.markets('KXBTCD') m, LATERAL kalshi.main.candlesticks("
-                    "m.series_ticker, m.ticker, period_interval => 60) c "
-                    "ORDER BY m.ticker, c.end_period_ts",
-                ),
+                SERIES_CANDLES_EXAMPLE,
             ),
         )
         examples = [
@@ -762,7 +767,7 @@ class CandlesticksFunction(RowTransformFunction[CandlestickArgs]):
                     "LATERAL kalshi.main.candlesticks(m.series_ticker, m.ticker, "
                     "period_interval => 60) c ORDER BY c.end_period_ts"
                 ),
-                description="Hourly closing prices for the busiest open market over the last day",
+                description="Hourly closing prices for an actively traded open market over the last day",
             ),
         ]
 
@@ -894,7 +899,7 @@ class TradesFunction(RowTransformFunction[TradesArgs]):
             ),
             example_queries=examples(
                 (
-                    "The most recent trades on the busiest open market in a series",
+                    "The most recent trades on an actively traded open market in a series",
                     "SELECT t.created_time, t.taker_side, t.yes_price_dollars, t.count_fp FROM ("
                     "SELECT ticker FROM kalshi.main.markets('KXBTCD') WHERE status = 'active' "
                     "AND volume_24h_fp > 100 LIMIT 1) m, "
@@ -919,7 +924,7 @@ class TradesFunction(RowTransformFunction[TradesArgs]):
                     "LATERAL kalshi.main.trades(m.ticker, max_rows => 100) t "
                     "ORDER BY t.created_time DESC"
                 ),
-                description="The most recent trades on the busiest open market in a series",
+                description="The most recent trades on an actively traded open market in a series",
             ),
         ]
 
