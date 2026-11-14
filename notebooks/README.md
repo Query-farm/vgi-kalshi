@@ -11,6 +11,13 @@ verified companions automatically. No worker checkout, Drive mount or API key is
 needed. A compatible Python runtime (3.11+) runs the notebook; uv manages the worker's
 separate Python 3.13 environment.
 
+Colab installs the base shared package and retains compatible pandas, Matplotlib,
+IPython and kernel libraries. Local publication uses the `[runner]` extra in this
+directory’s locked environment. If an older notebook already installed conflicting
+packages, save your work and choose **Runtime → Disconnect and delete runtime**,
+reconnect, and run the updated example. A session restart alone does not repair
+installed dependencies.
+
 Locally, from this directory:
 
 ```sh
@@ -27,9 +34,9 @@ uv run --locked python -m ipykernel install --user --name vgi-kalshi-notebooks -
 ```
 
 The visible connection uses the published Kalshi **v1.3.0** release, with no transitive
-dependency overrides in the SQL. Shared tooling is pinned to **v0.1.3** of
+dependency overrides in the SQL. Shared tooling is pinned to **v0.2.0** of
 [vgi-example-notebooks](https://github.com/Query-farm/vgi-example-notebooks), which
-owns the [standard](https://github.com/Query-farm/vgi-example-notebooks/blob/v0.1.3/docs/standard.md),
+owns the [standard](https://github.com/Query-farm/vgi-example-notebooks/blob/v0.2.0/docs/standard.md),
 runner, consistent branding, SVG theme and Colab companion retrieval. Override runs
 require a separate destination and cannot replace the last successful default.
 
@@ -70,7 +77,9 @@ request/hash checks and rendered charts are validated. The shared runner rejects
 unexpected warnings, saved errors and machine-specific paths. A narrow workaround
 handles the known JupySQL parser-docstring warning without hiding query failures.
 A hosted Google Colab session has not been manually exercised; the direct link and
-fresh-runtime bootstrap are tested separately.
+fresh-runtime bootstrap are tested separately. Compatibility is also checked with
+pandas 2.2.3, ipykernel 6.17.1, jupyter-client 7.4.9 and Matplotlib 3.10.0 already
+installed and plotting libraries preloaded; the base installation preserves them.
 
 Further planned narratives cover series/events/market discovery, trades versus
 candlestick aggregation, and the live/archive cutoff. The first notebook is the
