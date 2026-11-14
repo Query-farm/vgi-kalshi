@@ -214,7 +214,7 @@ def discovery_charts(markets, funnel, threshold):
     for i, r in enumerate(markets.itertuples()):
         label = "selected" if r.selected else r.exclusion
         ax.text(float(r.volume_24h_fp) + 10, i, label, va="center", fontsize=9)
-    ax.set_xlim(0, max(650, float(markets.volume_24h_fp.max()) * 1.4))
+    ax.set_xlim(0, max(650, float(markets.volume_24h_fp.max()) * 1.4, threshold * 1.12))
     finish(
         fig,
         "Activity alone does not establish source coverage",
