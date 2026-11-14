@@ -1,0 +1,1124 @@
+{
+  "schema_version": 1,
+  "status": "met",
+  "meets_target": true,
+  "catalogs": {
+    "released": {
+      "catalog_status": "verified",
+      "revision": "v1.3.0",
+      "catalog_sha256": "1a2ed2ab7dd292a44cbb53e99eb8164496d2e8916cd2c7f59bd6a2af167bff2d",
+      "collection_reconciled": true,
+      "denominator": 17,
+      "observed_objects": 17,
+      "required": 9,
+      "verified_count": 14,
+      "candidate_count": 0,
+      "fraction": 0.8235294117647058,
+      "meets_target": true,
+      "exact_runtime_count": 14,
+      "runtime_revisions": [
+        "v1.3.0"
+      ],
+      "covered": [
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "candlesticks"
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "event"
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "event_metadata"
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "events"
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "exchange_status"
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "historical_candlesticks"
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "historical_cutoff"
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "historical_markets"
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "historical_trades"
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "market"
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "markets"
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "orderbook"
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "series"
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "trades"
+        }
+      ],
+      "uncovered": [
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "all_exchange_status"
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "all_historical_cutoff"
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "all_series"
+        }
+      ],
+      "objects": [
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "all_exchange_status",
+          "kinds": [
+            "function"
+          ],
+          "signatures": [
+            "all_exchange_status()"
+          ],
+          "access": [
+            "read"
+          ],
+          "authentication": [
+            "optional"
+          ]
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "all_historical_cutoff",
+          "kinds": [
+            "function"
+          ],
+          "signatures": [
+            "all_historical_cutoff()"
+          ],
+          "access": [
+            "read"
+          ],
+          "authentication": [
+            "optional"
+          ]
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "all_series",
+          "kinds": [
+            "function"
+          ],
+          "signatures": [
+            "all_series()"
+          ],
+          "access": [
+            "read"
+          ],
+          "authentication": [
+            "optional"
+          ]
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "candlesticks",
+          "kinds": [
+            "function"
+          ],
+          "signatures": [
+            "candlesticks(VARCHAR, VARCHAR, BIGINT, BIGINT, BIGINT)"
+          ],
+          "access": [
+            "read"
+          ],
+          "authentication": [
+            "optional"
+          ]
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "event",
+          "kinds": [
+            "function"
+          ],
+          "signatures": [
+            "event(VARCHAR, BIGINT)"
+          ],
+          "access": [
+            "read"
+          ],
+          "authentication": [
+            "optional"
+          ]
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "event_metadata",
+          "kinds": [
+            "function"
+          ],
+          "signatures": [
+            "event_metadata(VARCHAR, BIGINT)"
+          ],
+          "access": [
+            "read"
+          ],
+          "authentication": [
+            "optional"
+          ]
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "events",
+          "kinds": [
+            "function"
+          ],
+          "signatures": [
+            "events(VARCHAR, VARCHAR, BIGINT)"
+          ],
+          "access": [
+            "read"
+          ],
+          "authentication": [
+            "optional"
+          ]
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "exchange_status",
+          "kinds": [
+            "table"
+          ],
+          "signatures": [],
+          "access": [
+            "read"
+          ],
+          "authentication": [
+            "optional"
+          ]
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "historical_candlesticks",
+          "kinds": [
+            "function"
+          ],
+          "signatures": [
+            "historical_candlesticks(VARCHAR, BIGINT, BIGINT, BIGINT)"
+          ],
+          "access": [
+            "read"
+          ],
+          "authentication": [
+            "optional"
+          ]
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "historical_cutoff",
+          "kinds": [
+            "table"
+          ],
+          "signatures": [],
+          "access": [
+            "read"
+          ],
+          "authentication": [
+            "optional"
+          ]
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "historical_markets",
+          "kinds": [
+            "function"
+          ],
+          "signatures": [
+            "historical_markets(VARCHAR, VARCHAR)"
+          ],
+          "access": [
+            "read"
+          ],
+          "authentication": [
+            "optional"
+          ]
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "historical_trades",
+          "kinds": [
+            "function"
+          ],
+          "signatures": [
+            "historical_trades(VARCHAR, BIGINT, BIGINT, BIGINT)"
+          ],
+          "access": [
+            "read"
+          ],
+          "authentication": [
+            "optional"
+          ]
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "market",
+          "kinds": [
+            "function"
+          ],
+          "signatures": [
+            "market(VARCHAR, BIGINT)"
+          ],
+          "access": [
+            "read"
+          ],
+          "authentication": [
+            "optional"
+          ]
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "markets",
+          "kinds": [
+            "function"
+          ],
+          "signatures": [
+            "markets(VARCHAR, VARCHAR, BOOLEAN, VARCHAR)"
+          ],
+          "access": [
+            "read"
+          ],
+          "authentication": [
+            "optional"
+          ]
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "orderbook",
+          "kinds": [
+            "function"
+          ],
+          "signatures": [
+            "orderbook(VARCHAR, BIGINT, BIGINT)"
+          ],
+          "access": [
+            "read"
+          ],
+          "authentication": [
+            "optional"
+          ]
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "series",
+          "kinds": [
+            "table"
+          ],
+          "signatures": [],
+          "access": [
+            "read"
+          ],
+          "authentication": [
+            "optional"
+          ]
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "trades",
+          "kinds": [
+            "function"
+          ],
+          "signatures": [
+            "trades(VARCHAR, BIGINT, BIGINT, BIGINT, BIGINT)"
+          ],
+          "access": [
+            "read"
+          ],
+          "authentication": [
+            "optional"
+          ]
+        }
+      ],
+      "issues": []
+    },
+    "current": {
+      "catalog_status": "verified",
+      "revision": "a1cfa37f22f6b71501c59bfd732df55290939e18",
+      "catalog_sha256": "0510cea22965728fe58e9bf0ab337659a837fa9ccda72dbf65be5452cacd99f2",
+      "collection_reconciled": true,
+      "denominator": 17,
+      "observed_objects": 17,
+      "required": 9,
+      "verified_count": 14,
+      "candidate_count": 0,
+      "fraction": 0.8235294117647058,
+      "meets_target": true,
+      "exact_runtime_count": 0,
+      "runtime_revisions": [
+        "v1.3.0"
+      ],
+      "covered": [
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "candlesticks"
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "event"
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "event_metadata"
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "events"
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "exchange_status"
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "historical_candlesticks"
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "historical_cutoff"
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "historical_markets"
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "historical_trades"
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "market"
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "markets"
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "orderbook"
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "series"
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "trades"
+        }
+      ],
+      "uncovered": [
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "all_exchange_status"
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "all_historical_cutoff"
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "all_series"
+        }
+      ],
+      "objects": [
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "all_exchange_status",
+          "kinds": [
+            "function"
+          ],
+          "signatures": [
+            "all_exchange_status()"
+          ],
+          "access": [
+            "read"
+          ],
+          "authentication": [
+            "optional"
+          ]
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "all_historical_cutoff",
+          "kinds": [
+            "function"
+          ],
+          "signatures": [
+            "all_historical_cutoff()"
+          ],
+          "access": [
+            "read"
+          ],
+          "authentication": [
+            "optional"
+          ]
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "all_series",
+          "kinds": [
+            "function"
+          ],
+          "signatures": [
+            "all_series()"
+          ],
+          "access": [
+            "read"
+          ],
+          "authentication": [
+            "optional"
+          ]
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "candlesticks",
+          "kinds": [
+            "function"
+          ],
+          "signatures": [
+            "candlesticks(VARCHAR, VARCHAR, BIGINT, BIGINT, BIGINT)"
+          ],
+          "access": [
+            "read"
+          ],
+          "authentication": [
+            "optional"
+          ]
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "event",
+          "kinds": [
+            "function"
+          ],
+          "signatures": [
+            "event(VARCHAR, BIGINT)"
+          ],
+          "access": [
+            "read"
+          ],
+          "authentication": [
+            "optional"
+          ]
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "event_metadata",
+          "kinds": [
+            "function"
+          ],
+          "signatures": [
+            "event_metadata(VARCHAR, BIGINT)"
+          ],
+          "access": [
+            "read"
+          ],
+          "authentication": [
+            "optional"
+          ]
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "events",
+          "kinds": [
+            "function"
+          ],
+          "signatures": [
+            "events(VARCHAR, VARCHAR, BIGINT)"
+          ],
+          "access": [
+            "read"
+          ],
+          "authentication": [
+            "optional"
+          ]
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "exchange_status",
+          "kinds": [
+            "table"
+          ],
+          "signatures": [],
+          "access": [
+            "read"
+          ],
+          "authentication": [
+            "optional"
+          ]
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "historical_candlesticks",
+          "kinds": [
+            "function"
+          ],
+          "signatures": [
+            "historical_candlesticks(VARCHAR, BIGINT, BIGINT, BIGINT)"
+          ],
+          "access": [
+            "read"
+          ],
+          "authentication": [
+            "optional"
+          ]
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "historical_cutoff",
+          "kinds": [
+            "table"
+          ],
+          "signatures": [],
+          "access": [
+            "read"
+          ],
+          "authentication": [
+            "optional"
+          ]
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "historical_markets",
+          "kinds": [
+            "function"
+          ],
+          "signatures": [
+            "historical_markets(VARCHAR, VARCHAR)"
+          ],
+          "access": [
+            "read"
+          ],
+          "authentication": [
+            "optional"
+          ]
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "historical_trades",
+          "kinds": [
+            "function"
+          ],
+          "signatures": [
+            "historical_trades(VARCHAR, BIGINT, BIGINT, BIGINT)"
+          ],
+          "access": [
+            "read"
+          ],
+          "authentication": [
+            "optional"
+          ]
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "market",
+          "kinds": [
+            "function"
+          ],
+          "signatures": [
+            "market(VARCHAR, BIGINT)"
+          ],
+          "access": [
+            "read"
+          ],
+          "authentication": [
+            "optional"
+          ]
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "markets",
+          "kinds": [
+            "function"
+          ],
+          "signatures": [
+            "markets(VARCHAR, VARCHAR, BOOLEAN, VARCHAR)"
+          ],
+          "access": [
+            "read"
+          ],
+          "authentication": [
+            "optional"
+          ]
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "orderbook",
+          "kinds": [
+            "function"
+          ],
+          "signatures": [
+            "orderbook(VARCHAR, BIGINT, BIGINT)"
+          ],
+          "access": [
+            "read"
+          ],
+          "authentication": [
+            "optional"
+          ]
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "series",
+          "kinds": [
+            "table"
+          ],
+          "signatures": [],
+          "access": [
+            "read"
+          ],
+          "authentication": [
+            "optional"
+          ]
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "trades",
+          "kinds": [
+            "function"
+          ],
+          "signatures": [
+            "trades(VARCHAR, BIGINT, BIGINT, BIGINT, BIGINT)"
+          ],
+          "access": [
+            "read"
+          ],
+          "authentication": [
+            "optional"
+          ]
+        }
+      ],
+      "issues": []
+    }
+  },
+  "interface_drift": {
+    "known": true,
+    "current_only": [],
+    "released_only": [],
+    "changed": []
+  },
+  "notebooks": {
+    "01_quoted_depth_depends_on_the_band.ipynb": {
+      "verified": true,
+      "issues": []
+    },
+    "02_discover_contracts_with_source_context.ipynb": {
+      "verified": true,
+      "issues": []
+    },
+    "03_reconcile_trades_and_candles.ipynb": {
+      "verified": true,
+      "issues": []
+    },
+    "04_route_across_the_archive_boundary.ipynb": {
+      "verified": true,
+      "issues": []
+    }
+  },
+  "examples": [
+    {
+      "status": "verified",
+      "issues": [],
+      "verified_catalogs": [
+        "released",
+        "current"
+      ],
+      "object": {
+        "schema": [
+          "main"
+        ],
+        "name": "market"
+      },
+      "notebook": "01_quoted_depth_depends_on_the_band.ipynb",
+      "runtime_revision": "v1.3.0",
+      "runtime_catalog_sha256": "1a2ed2ab7dd292a44cbb53e99eb8164496d2e8916cd2c7f59bd6a2af167bff2d"
+    },
+    {
+      "status": "verified",
+      "issues": [],
+      "verified_catalogs": [
+        "released",
+        "current"
+      ],
+      "object": {
+        "schema": [
+          "main"
+        ],
+        "name": "orderbook"
+      },
+      "notebook": "01_quoted_depth_depends_on_the_band.ipynb",
+      "runtime_revision": "v1.3.0",
+      "runtime_catalog_sha256": "1a2ed2ab7dd292a44cbb53e99eb8164496d2e8916cd2c7f59bd6a2af167bff2d"
+    },
+    {
+      "status": "verified",
+      "issues": [],
+      "verified_catalogs": [
+        "released",
+        "current"
+      ],
+      "object": {
+        "schema": [
+          "main"
+        ],
+        "name": "series"
+      },
+      "notebook": "02_discover_contracts_with_source_context.ipynb",
+      "runtime_revision": "v1.3.0",
+      "runtime_catalog_sha256": "1a2ed2ab7dd292a44cbb53e99eb8164496d2e8916cd2c7f59bd6a2af167bff2d"
+    },
+    {
+      "status": "verified",
+      "issues": [],
+      "verified_catalogs": [
+        "released",
+        "current"
+      ],
+      "object": {
+        "schema": [
+          "main"
+        ],
+        "name": "exchange_status"
+      },
+      "notebook": "02_discover_contracts_with_source_context.ipynb",
+      "runtime_revision": "v1.3.0",
+      "runtime_catalog_sha256": "1a2ed2ab7dd292a44cbb53e99eb8164496d2e8916cd2c7f59bd6a2af167bff2d"
+    },
+    {
+      "status": "verified",
+      "issues": [],
+      "verified_catalogs": [
+        "released",
+        "current"
+      ],
+      "object": {
+        "schema": [
+          "main"
+        ],
+        "name": "markets"
+      },
+      "notebook": "02_discover_contracts_with_source_context.ipynb",
+      "runtime_revision": "v1.3.0",
+      "runtime_catalog_sha256": "1a2ed2ab7dd292a44cbb53e99eb8164496d2e8916cd2c7f59bd6a2af167bff2d"
+    },
+    {
+      "status": "verified",
+      "issues": [],
+      "verified_catalogs": [
+        "released",
+        "current"
+      ],
+      "object": {
+        "schema": [
+          "main"
+        ],
+        "name": "events"
+      },
+      "notebook": "02_discover_contracts_with_source_context.ipynb",
+      "runtime_revision": "v1.3.0",
+      "runtime_catalog_sha256": "1a2ed2ab7dd292a44cbb53e99eb8164496d2e8916cd2c7f59bd6a2af167bff2d"
+    },
+    {
+      "status": "verified",
+      "issues": [],
+      "verified_catalogs": [
+        "released",
+        "current"
+      ],
+      "object": {
+        "schema": [
+          "main"
+        ],
+        "name": "event"
+      },
+      "notebook": "02_discover_contracts_with_source_context.ipynb",
+      "runtime_revision": "v1.3.0",
+      "runtime_catalog_sha256": "1a2ed2ab7dd292a44cbb53e99eb8164496d2e8916cd2c7f59bd6a2af167bff2d"
+    },
+    {
+      "status": "verified",
+      "issues": [],
+      "verified_catalogs": [
+        "released",
+        "current"
+      ],
+      "object": {
+        "schema": [
+          "main"
+        ],
+        "name": "event_metadata"
+      },
+      "notebook": "02_discover_contracts_with_source_context.ipynb",
+      "runtime_revision": "v1.3.0",
+      "runtime_catalog_sha256": "1a2ed2ab7dd292a44cbb53e99eb8164496d2e8916cd2c7f59bd6a2af167bff2d"
+    },
+    {
+      "status": "verified",
+      "issues": [],
+      "verified_catalogs": [
+        "released",
+        "current"
+      ],
+      "object": {
+        "schema": [
+          "main"
+        ],
+        "name": "trades"
+      },
+      "notebook": "03_reconcile_trades_and_candles.ipynb",
+      "runtime_revision": "v1.3.0",
+      "runtime_catalog_sha256": "1a2ed2ab7dd292a44cbb53e99eb8164496d2e8916cd2c7f59bd6a2af167bff2d"
+    },
+    {
+      "status": "verified",
+      "issues": [],
+      "verified_catalogs": [
+        "released",
+        "current"
+      ],
+      "object": {
+        "schema": [
+          "main"
+        ],
+        "name": "candlesticks"
+      },
+      "notebook": "03_reconcile_trades_and_candles.ipynb",
+      "runtime_revision": "v1.3.0",
+      "runtime_catalog_sha256": "1a2ed2ab7dd292a44cbb53e99eb8164496d2e8916cd2c7f59bd6a2af167bff2d"
+    },
+    {
+      "status": "verified",
+      "issues": [],
+      "verified_catalogs": [
+        "released",
+        "current"
+      ],
+      "object": {
+        "schema": [
+          "main"
+        ],
+        "name": "historical_cutoff"
+      },
+      "notebook": "04_route_across_the_archive_boundary.ipynb",
+      "runtime_revision": "v1.3.0",
+      "runtime_catalog_sha256": "1a2ed2ab7dd292a44cbb53e99eb8164496d2e8916cd2c7f59bd6a2af167bff2d"
+    },
+    {
+      "status": "verified",
+      "issues": [],
+      "verified_catalogs": [
+        "released",
+        "current"
+      ],
+      "object": {
+        "schema": [
+          "main"
+        ],
+        "name": "historical_markets"
+      },
+      "notebook": "04_route_across_the_archive_boundary.ipynb",
+      "runtime_revision": "v1.3.0",
+      "runtime_catalog_sha256": "1a2ed2ab7dd292a44cbb53e99eb8164496d2e8916cd2c7f59bd6a2af167bff2d"
+    },
+    {
+      "status": "verified",
+      "issues": [],
+      "verified_catalogs": [
+        "released",
+        "current"
+      ],
+      "object": {
+        "schema": [
+          "main"
+        ],
+        "name": "historical_trades"
+      },
+      "notebook": "04_route_across_the_archive_boundary.ipynb",
+      "runtime_revision": "v1.3.0",
+      "runtime_catalog_sha256": "1a2ed2ab7dd292a44cbb53e99eb8164496d2e8916cd2c7f59bd6a2af167bff2d"
+    },
+    {
+      "status": "verified",
+      "issues": [],
+      "verified_catalogs": [
+        "released",
+        "current"
+      ],
+      "object": {
+        "schema": [
+          "main"
+        ],
+        "name": "historical_candlesticks"
+      },
+      "notebook": "04_route_across_the_archive_boundary.ipynb",
+      "runtime_revision": "v1.3.0",
+      "runtime_catalog_sha256": "1a2ed2ab7dd292a44cbb53e99eb8164496d2e8916cd2c7f59bd6a2af167bff2d"
+    }
+  ],
+  "issues": []
+}

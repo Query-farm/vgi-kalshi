@@ -1,12 +1,12 @@
 {
   "schema_version": 1,
-  "notebook_sha256": "0079d50de1a8b54c1d8f17ec1bcb1c3da3c6e1fffb01d2c99da7cf3d2707dbd8",
+  "notebook_sha256": "9a870bdd003cdc8300270840fa31613b456158485bdfcf406e753059fd3c02ac",
   "catalog_sha256": "1a2ed2ab7dd292a44cbb53e99eb8164496d2e8916cd2c7f59bd6a2af167bff2d",
   "worker_revision": "v1.3.0",
   "status": "success",
-  "executed_at": "2026-11-14T17:32:01.477233+00:00",
+  "executed_at": "2026-11-14T18:52:15.179336+00:00",
   "engine": "Haybarn 2.0.0rc11 / community VGI; released vgi-kalshi v1.3.0",
-  "command": "uv run --locked vgi-notebooks 01_quoted_depth_depends_on_the_band.ipynb --timeout 300",
+  "command": "uv run --locked vgi-notebooks --timeout 300",
   "catalog_aliases": [
     "kalshi"
   ],
@@ -22,7 +22,7 @@
       "id": "install-example-tools",
       "status": "success",
       "execution_count": 2,
-      "source_sha256": "3d5be3f29e8ae78597d1711c6f1eb8e1e8499dcf4d626a5b0cd6e6a5f3e9663a",
+      "source_sha256": "c25a0a4a1548493111f4702ebc51af007b4e32bc0b3102a295973049772d4353",
       "outputs_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
     {
@@ -116,5 +116,6 @@
       "source_sha256": "5d32b3b638975f9d6dc22aee48948b0a76135f07c6ae14be3b03bafbd17b75f5",
       "outputs_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     }
-  ]
+  ],
+  "presentation_update": "Shared tools0.3.6: linked worker identity/header/footer; analytical code unchanged; whole notebook executed again."
 }
