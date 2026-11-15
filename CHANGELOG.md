@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.3.1
 
 ### Fixed
 
@@ -29,6 +29,16 @@
   implied median from each strike ladder, and settled markets'
   volume-weighted traded price from `historical_trades()` next to what
   `historical_markets()` says they paid. New agent task `settled_event_vwap`.
+- The catalog comment is one plain sentence-level paragraph (VGI107) instead of
+  a list of object names; the overview stays in `vgi.doc_md` / `vgi.doc_llm`.
+- The catalog docs link to the upstream service and its documentation (VGI183):
+  kalshi.com, the Kalshi Trade API docs, the historical-data, rate-limit and
+  API-key pages.
+- The terms notice now links the Kalshi Data Terms of Use and the Kalshi
+  Developer Agreement (in the catalog docs, `vgi.copyright`, NOTICE and the
+  README), and states the Developer Agreement's limits on API use. The old
+  `kalshi.com/terms` link returns 404.
+- README's pinned-install example now pins v1.3.1.
 
 ## 1.3.0
 

@@ -307,7 +307,7 @@ _CATALOG_TAGS = {
     "vgi.author": "Query Farm LLC <hello@query.farm>",
     "vgi.copyright": (
         "Worker (c) 2026 Query Farm LLC - https://query.farm. Market data (c) Kalshi Inc., "
-        "redistributed under Kalshi's terms of use."
+        "subject to the Kalshi Data Terms of Use and the Kalshi Developer Agreement."
     ),
     "vgi.license": "MIT",
     "vgi.support_contact": "https://github.com/Query-farm/vgi-kalshi/issues",
@@ -361,7 +361,27 @@ _CATALOG_TAGS = {
         "so a join across a whole series is hundreds of calls. Requests are retried with "
         "exponential backoff, and the per-market functions take a `cache_ttl` argument that "
         "turns repeated lookups of the same ticker into cache hits when a few seconds of "
-        "staleness is acceptable."
+        "staleness is acceptable.\n\n"
+        "### Sources\n\n"
+        "- [Kalshi](https://kalshi.com) — the exchange this data comes from.\n"
+        "- [Kalshi API documentation](https://docs.kalshi.com) — the public Trade API v2 this "
+        "worker reads (`https://api.elections.kalshi.com/trade-api/v2`): series, events, "
+        "markets, order books, candlesticks, trades, exchange status and the "
+        "[historical archive](https://docs.kalshi.com/getting_started/historical_data).\n"
+        "- [Rate limits and tiers](https://docs.kalshi.com/getting_started/rate_limits) — the "
+        "request budget that `cache_ttl` and the retry backoff are built around.\n"
+        "- [API keys](https://docs.kalshi.com/getting_started/api_keys) — optional; only "
+        "needed to sign requests at a higher rate-limit tier, via a `kalshi` secret.\n\n"
+        "### Terms of use\n\n"
+        "The market data is Kalshi Inc.'s, not covered by this worker's MIT license, and is "
+        "subject to the [Kalshi Data Terms of Use]"
+        "(https://kalshi-public-docs.s3.amazonaws.com/kalshi-data-terms-of-service.pdf) and the "
+        "[Kalshi Developer Agreement]"
+        "(https://kalshi-public-docs.s3.amazonaws.com/Kalshi-Developer-Agreement.pdf). The "
+        "Developer Agreement limits API use to facilitating a member's own trading on the "
+        "exchange and restricts storing, aggregating or sharing the data without Kalshi's "
+        "written authorization; read both before using this worker. This worker is not "
+        "affiliated with or endorsed by Kalshi."
     ),
 }
 
@@ -535,7 +555,9 @@ _KALSHI_CATALOG = Catalog(
     name="kalshi",
     default_schema="main",
     comment=(
-        "Read-only Kalshi prediction-market data: markets, order books, candlesticks, trades, events, series"
+        "Read-only public data from Kalshi, a CFTC-regulated US prediction-market exchange whose "
+        "contract prices read directly as event probabilities, covering live and archived markets. "
+        "No account or API key is required."
     ),
     tags=_CATALOG_TAGS,
     schemas=[

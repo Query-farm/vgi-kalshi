@@ -60,7 +60,7 @@ Pin a tag for a deployment, so the worker cannot change under you:
 
 ```sql
 ATTACH 'kalshi' (TYPE vgi,
-  LOCATION 'uvx --from git+https://github.com/Query-farm/vgi-kalshi@v1.0.0 vgi-kalshi');
+  LOCATION 'uvx --from git+https://github.com/Query-farm/vgi-kalshi@v1.3.1 vgi-kalshi');
 ```
 
 **This package is not published to PyPI, and is not intended to be** — install
@@ -631,7 +631,10 @@ Copyright © 2026 [Query Farm LLC](https://query.farm)
 Released under the **MIT License** — see [LICENSE](LICENSE).
 
 The market data this worker returns is Kalshi's, not covered by that license,
-and subject to [Kalshi's terms of use](https://kalshi.com/terms). See
+and subject to the [Kalshi Data Terms of Use](https://kalshi-public-docs.s3.amazonaws.com/kalshi-data-terms-of-service.pdf)
+and the [Kalshi Developer Agreement](https://kalshi-public-docs.s3.amazonaws.com/Kalshi-Developer-Agreement.pdf),
+which limits API use to facilitating a member's own trading and restricts
+storing or sharing the data without Kalshi's written authorization. See
 [NOTICE](NOTICE). This project is not affiliated with or endorsed by Kalshi.
 
 ---

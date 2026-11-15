@@ -163,5 +163,6 @@ class TestLicenseMetadata:
     def test_carve_out_survives_in_notice(self) -> None:
         """Moving it out of LICENSE must not have dropped it."""
         notice = (ROOT / "NOTICE").read_text()
-        assert "kalshi.com/terms" in notice
+        assert "kalshi-data-terms-of-service.pdf" in notice
+        assert "Kalshi-Developer-Agreement.pdf" in notice
         assert "MIT License" in notice
