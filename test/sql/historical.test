@@ -1,0 +1,48 @@
+# name: test/sql/historical.test
+# description: The settled-market archive: historical_markets, historical_trades, historical_candlesticks
+# group: [kalshi]
+#
+# Runs offline against the fake Kalshi API (test/mock_api/server.py: the
+# synthetic DEMOWX fixtures in notebooks/surface_fixtures.json plus one recorded
+# KXBTCD market and order book) through ci/run-integration.sh.
+
+require vgi
+
+require-env VGI_KALSHI_WORKER
+
+require-env KALSHI_BASE_URL
+
+statement ok
+ATTACH 'kalshi' (TYPE vgi, LOCATION '{VGI_KALSHI_WORKER}');
+
+query TTTTTT
+SELECT ticker, status, close_time, last_price_dollars, settlement_value_dollars, result FROM kalshi.main.historical_markets('DEMOWX') ORDER BY ticker;
+----
+DEMOWX-26NOV01-T20	finalized	2026-11-01 12:00:00+00	0.8000	1.0000	yes
+DEMOWX-26NOV04-T20	finalized	2026-11-04 12:00:00+00	0.4500	0.0000	no
+DEMOWX-26NOV08-T20	finalized	2026-11-08 12:00:00+00	0.2500	1.0000	yes
+
+query T
+SELECT ticker FROM kalshi.main.historical_markets('DEMOWX', event_ticker => 'DEMOWX-26NOV04');
+----
+DEMOWX-26NOV04-T20
+
+query TTTT
+SELECT trade_id, created_time, yes_price_dollars, count_fp FROM kalshi.main.historical_trades('DEMOWX-26NOV01-T20') ORDER BY trade_id;
+----
+DEMOWX-26NOV01-T20-1	2026-11-01 10:30:00+00	0.5500	10.00
+DEMOWX-26NOV01-T20-2	2026-11-01 11:30:00+00	0.8000	30.00
+
+query TTT
+SELECT end_period_ts, volume_fp, price_close_dollars FROM kalshi.main.historical_candlesticks('DEMOWX-26NOV01-T20', start_ts => 1793491200, end_ts => 1794268800) ORDER BY end_period_ts;
+----
+2026-11-01 11:00:00+00	10.00	0.5500
+2026-11-01 12:00:00+00	30.00	0.8000
+
+# Last traded price against the settlement payout, across the archive.
+query TT
+SELECT m.ticker, max_by(t.yes_price_dollars, t.created_time) FROM kalshi.main.historical_markets('DEMOWX') m, LATERAL kalshi.main.historical_trades(m.ticker) t GROUP BY ALL ORDER BY ALL;
+----
+DEMOWX-26NOV01-T20	0.8000
+DEMOWX-26NOV04-T20	0.4500
+DEMOWX-26NOV08-T20	0.2500

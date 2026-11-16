@@ -1,0 +1,53 @@
+# name: test/sql/events.test
+# description: events(), event() and event_metadata()
+# group: [kalshi]
+#
+# Runs offline against the fake Kalshi API (test/mock_api/server.py: the
+# synthetic DEMOWX fixtures in notebooks/surface_fixtures.json plus one recorded
+# KXBTCD market and order book) through ci/run-integration.sh.
+
+require vgi
+
+require-env VGI_KALSHI_WORKER
+
+require-env KALSHI_BASE_URL
+
+statement ok
+ATTACH 'kalshi' (TYPE vgi, LOCATION '{VGI_KALSHI_WORKER}');
+
+query TTTT
+SELECT event_ticker, title, category, strike_date FROM kalshi.main.events('DEMOWX') ORDER BY event_ticker;
+----
+DEMOWX-26NOV15	Synthetic high temperature on November 15?	Climate	2026-11-15 18:00:00+00
+DEMOWX-26NOV16	Synthetic high temperature on November 16?	Climate	2026-11-16 18:00:00+00
+DEMOWX-26NOV17	Synthetic high temperature on November 17?	Climate	2026-11-17 18:00:00+00
+
+query I
+SELECT count(*) FROM kalshi.main.events('DEMOWX') WHERE event_ticker = 'NO-SUCH-EVENT';
+----
+0
+
+query TTI
+SELECT event_ticker, series_ticker, mutually_exclusive FROM kalshi.main.event('DEMOWX-26NOV16');
+----
+DEMOWX-26NOV16	DEMOWX	false
+
+# An unknown event is Kalshi's 404, surfaced with the path.
+statement error
+SELECT count(*) FROM kalshi.main.event('NO-SUCH-EVENT');
+----
+<REGEX>:.*404 for /events/NO-SUCH-EVENT.*
+
+query TTT
+SELECT event_ticker, settlement_source_name, settlement_source_url FROM kalshi.main.event_metadata('DEMOWX-26NOV15') ORDER BY settlement_source_name;
+----
+DEMOWX-26NOV15	Synthetic observation source 1	https://example.invalid/weather/1
+DEMOWX-26NOV15	Synthetic observation source 2	https://example.invalid/weather/2
+
+# events() drives event_metadata() under LATERAL: one row per source.
+query TI
+SELECT e.event_ticker, count(m.settlement_source_name) FROM kalshi.main.events('DEMOWX') e LEFT JOIN LATERAL kalshi.main.event_metadata(e.event_ticker) m ON true GROUP BY ALL ORDER BY ALL;
+----
+DEMOWX-26NOV15	2
+DEMOWX-26NOV16	1
+DEMOWX-26NOV17	0

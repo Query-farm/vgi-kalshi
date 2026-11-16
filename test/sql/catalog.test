@@ -1,0 +1,51 @@
+# name: test/sql/catalog.test
+# description: The catalog's tables and functions are advertised; ATTACH options are validated
+# group: [kalshi]
+#
+# Runs offline against the fake Kalshi API (test/mock_api/server.py: the
+# synthetic DEMOWX fixtures in notebooks/surface_fixtures.json plus one recorded
+# KXBTCD market and order book) through ci/run-integration.sh.
+
+require vgi
+
+require-env VGI_KALSHI_WORKER
+
+require-env KALSHI_BASE_URL
+
+statement ok
+ATTACH 'kalshi' (TYPE vgi, LOCATION '{VGI_KALSHI_WORKER}');
+
+query T
+SELECT table_name FROM duckdb_tables() WHERE database_name = 'kalshi' ORDER BY table_name;
+----
+exchange_status
+historical_cutoff
+series
+
+query T
+SELECT DISTINCT function_name FROM duckdb_functions() WHERE database_name = 'kalshi' ORDER BY function_name;
+----
+all_exchange_status
+all_historical_cutoff
+all_series
+candlesticks
+event
+event_metadata
+events
+historical_candlesticks
+historical_markets
+historical_trades
+margin_balance
+margin_funding_history
+margin_positions
+margin_risk
+market
+markets
+orderbook
+trades
+
+# An unknown auth mode is rejected at ATTACH rather than read as 'auto'.
+statement error
+ATTACH 'kalshi' AS kalshi_bad (TYPE vgi, LOCATION '{VGI_KALSHI_WORKER}', auth 'require');
+----
+<REGEX>:.*require.*

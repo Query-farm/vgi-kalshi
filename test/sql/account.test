@@ -1,0 +1,78 @@
+# name: test/sql/account.test
+# description: The margin_* perps account functions: never anonymous, signed with a secret
+# group: [kalshi]
+#
+# Runs offline against the fake Kalshi API (test/mock_api/server.py: the
+# synthetic DEMOWX fixtures in notebooks/surface_fixtures.json plus one recorded
+# KXBTCD market and order book) through ci/run-integration.sh.
+
+require vgi
+
+require-env VGI_KALSHI_WORKER
+
+require-env KALSHI_BASE_URL
+
+require-env KALSHI_TEST_PRIVATE_KEY
+
+statement ok
+ATTACH 'kalshi' (TYPE vgi, LOCATION '{VGI_KALSHI_WORKER}');
+
+# Without a kalshi secret every account function refuses before sending anything.
+statement error
+SELECT * FROM kalshi.main.margin_positions();
+----
+<REGEX>:.*margin_positions reads your own Kalshi perps account and needs an API key.*
+
+statement error
+SELECT * FROM kalshi.main.margin_balance();
+----
+<REGEX>:.*margin_balance reads your own Kalshi perps account.*
+
+statement error
+SELECT * FROM kalshi.main.margin_risk();
+----
+<REGEX>:.*margin_risk reads your own Kalshi perps account.*
+
+statement error
+SELECT * FROM kalshi.main.margin_funding_history();
+----
+<REGEX>:.*margin_funding_history reads your own Kalshi perps account.*
+
+statement error
+SELECT * FROM kalshi.main.margin_funding_history(start_date => 'Nov 1');
+----
+<REGEX>:.*
+
+# A throwaway Ed25519 key that ci/run-integration.sh generates per run, tied to
+# no account. The fake answers /margin/* only for signed requests from key id
+# 'test-key-id'.
+statement ok
+CREATE SECRET kalshi_test (TYPE kalshi, key_id 'test-key-id', private_key '{KALSHI_TEST_PRIVATE_KEY}');
+
+query TTTTI
+SELECT market_ticker, position, entry_price, margin_used, subaccount FROM kalshi.main.margin_positions();
+----
+KXGOLDPERP	-996.00	3.8643	184.5318	85
+
+# Six-decimal balances survive; a field Kalshi omitted is NULL, not zero.
+query ITTT
+SELECT subaccount, account_equity, initial_margin, settled_funds FROM kalshi.main.margin_balance() ORDER BY subaccount;
+----
+0	0.000000	NULL	1100.000000
+85	1090.356500	233.3708	1100.000000
+
+query TTT
+SELECT market_ticker, estimated_liquidation_price, total_position_notional FROM kalshi.main.margin_risk();
+----
+KXGOLDPERP	4.9065	3858.3048
+
+query TTIT
+SELECT market_ticker, funding_amount, subaccount, funding_time FROM kalshi.main.margin_funding_history(start_date => '2026-11-01', end_date => '2026-11-16');
+----
+KXGOLDPERP	0.508962	85	2026-11-16 15:00:00+00
+
+# The private key is redacted in duckdb_secrets().
+query I
+SELECT contains(secret_string, 'BEGIN PRIVATE KEY') FROM duckdb_secrets() WHERE name = 'kalshi_test';
+----
+false

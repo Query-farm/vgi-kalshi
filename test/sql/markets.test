@@ -1,0 +1,105 @@
+# name: test/sql/markets.test
+# description: markets() and market(): paging, status filters, pushdown, decimals, argument errors
+# group: [kalshi]
+#
+# Runs offline against the fake Kalshi API (test/mock_api/server.py: the
+# synthetic DEMOWX fixtures in notebooks/surface_fixtures.json plus one recorded
+# KXBTCD market and order book) through ci/run-integration.sh.
+
+require vgi
+
+require-env VGI_KALSHI_WORKER
+
+require-env KALSHI_BASE_URL
+
+statement ok
+ATTACH 'kalshi' (TYPE vgi, LOCATION '{VGI_KALSHI_WORKER}');
+
+# Six DEMOWX markets at the fake's four per page: the cursor is followed.
+query TTTTTT
+SELECT ticker, series_ticker, event_ticker, status, floor_strike, volume_24h_fp FROM kalshi.main.markets('DEMOWX') ORDER BY ticker;
+----
+DEMOWX-26NOV15-T20	DEMOWX	DEMOWX-26NOV15	active	20.0000	80.00
+DEMOWX-26NOV15-T25	DEMOWX	DEMOWX-26NOV15	active	25.0000	220.00
+DEMOWX-26NOV16-T20	DEMOWX	DEMOWX-26NOV16	active	20.0000	150.00
+DEMOWX-26NOV16-T25	DEMOWX	DEMOWX-26NOV16	active	25.0000	420.00
+DEMOWX-26NOV17-T20	DEMOWX	DEMOWX-26NOV17	active	20.0000	300.00
+DEMOWX-26NOV17-T25	DEMOWX	DEMOWX-26NOV17	closed	25.0000	600.00
+
+query TT
+SELECT typeof(last_price_dollars), last_price_dollars FROM kalshi.main.markets('DEMOWX') WHERE ticker = 'DEMOWX-26NOV15-T20';
+----
+DECIMAL(18,4)	0.5000
+
+# The status argument speaks the filter vocabulary; rows read 'active'.
+query T
+SELECT ticker FROM kalshi.main.markets('DEMOWX', status => 'closed');
+----
+DEMOWX-26NOV17-T25
+
+query I
+SELECT count(*) FROM kalshi.main.markets('DEMOWX', status => 'open');
+----
+5
+
+query T
+SELECT ticker FROM kalshi.main.markets('DEMOWX', event_ticker => 'DEMOWX-26NOV16') ORDER BY ticker;
+----
+DEMOWX-26NOV16-T20
+DEMOWX-26NOV16-T25
+
+# Pushed-down predicates still hold on every row.
+query T
+SELECT ticker FROM kalshi.main.markets('DEMOWX') WHERE event_ticker = 'DEMOWX-26NOV17' AND status = 'closed';
+----
+DEMOWX-26NOV17-T25
+
+query T
+SELECT ticker FROM kalshi.main.markets('DEMOWX') WHERE volume_24h_fp > 400 ORDER BY ticker;
+----
+DEMOWX-26NOV16-T25
+DEMOWX-26NOV17-T25
+
+query I
+SELECT count(*) FROM kalshi.main.markets('DEMOWX') WHERE volume_24h_fp > 999999999;
+----
+0
+
+query I
+SELECT count(*) FROM kalshi.main.markets('DEMOWX') WHERE ticker = 'NO-SUCH-TICKER';
+----
+0
+
+query I
+SELECT count(*) FROM (SELECT ticker FROM kalshi.main.markets('DEMOWX') LIMIT 2);
+----
+2
+
+statement error
+SELECT * FROM kalshi.main.markets('DEMOWX', status => 'active');
+----
+<REGEX>:.*
+
+# market(): the recorded KXBTCD response, every nested column intact.
+query TTTTTTTT
+SELECT ticker, series_ticker, floor_strike, yes_bid_dollars, yes_ask_dollars, volume_24h_fp, open_interest_fp, custom_strike['round_digits'] FROM kalshi.main.market('KXBTCD-26NOV1417-T66999.99');
+----
+KXBTCD-26NOV1417-T66999.99	KXBTCD	66999.9900	0.5100	0.5200	90573.05	12306.72	2
+
+query TTTT
+SELECT price_ranges[1].start, price_ranges[1]."end", price_ranges[1].step, close_time FROM kalshi.main.market('KXBTCD-26NOV1417-T66999.99');
+----
+0.0000	1.0000	0.0100	2026-11-14 22:00:00+00
+
+# An unknown ticker is Kalshi's 404, surfaced with the path.
+statement error
+SELECT count(*) FROM kalshi.main.market('NO-SUCH-TICKER');
+----
+<REGEX>:.*404 for /markets/NO-SUCH-TICKER.*
+
+# markets() drives market() under LATERAL.
+query TT
+SELECT m.ticker, x.title FROM (SELECT ticker FROM kalshi.main.markets('DEMOWX', event_ticker => 'DEMOWX-26NOV15')) m, LATERAL kalshi.main.market(m.ticker) x ORDER BY m.ticker;
+----
+DEMOWX-26NOV15-T20	Synthetic high above 20 C?
+DEMOWX-26NOV15-T25	Synthetic high above 25 C?

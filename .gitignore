@@ -16,3 +16,4 @@ venv/
 
 # vgi-lint baselines are per-machine unless deliberately committed
 .vgi-lint-baseline*.json
+.tools/

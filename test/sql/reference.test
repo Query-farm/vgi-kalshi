@@ -1,0 +1,54 @@
+# name: test/sql/reference.test
+# description: The series, exchange_status and historical_cutoff tables
+# group: [kalshi]
+#
+# Runs offline against the fake Kalshi API (test/mock_api/server.py: the
+# synthetic DEMOWX fixtures in notebooks/surface_fixtures.json plus one recorded
+# KXBTCD market and order book) through ci/run-integration.sh.
+
+require vgi
+
+require-env VGI_KALSHI_WORKER
+
+require-env KALSHI_BASE_URL
+
+statement ok
+ATTACH 'kalshi' (TYPE vgi, LOCATION '{VGI_KALSHI_WORKER}');
+
+query TTTTTI
+SELECT ticker, title, category, frequency, fee_type, fee_multiplier FROM kalshi.main.series ORDER BY ticker;
+----
+DEMOPOWER	Synthetic weekly power index	Energy	weekly	NULL	NULL
+DEMOWX	Synthetic daily temperature	Climate	daily	quadratic	1
+
+query TT
+SELECT tags, contract_url FROM kalshi.main.series WHERE ticker = 'DEMOWX';
+----
+[synthetic]	https://example.invalid/demo-contract
+
+# category is pushed to the API (and still applied).
+query T
+SELECT ticker FROM kalshi.main.series WHERE category = 'Energy';
+----
+DEMOPOWER
+
+query I
+SELECT count(*) FROM kalshi.main.series WHERE category = 'NoSuchCategory';
+----
+0
+
+query I
+SELECT (SELECT count(*) FROM kalshi.main.series) = (SELECT count(*) FROM kalshi.main.all_series());
+----
+true
+
+query ITIIII
+SELECT exchange_index, description, exchange_active, trading_active, exchange_active_overall, trading_active_overall FROM kalshi.main.exchange_status ORDER BY exchange_index;
+----
+0	Synthetic Default	true	true	true	true
+2	Synthetic Climate	true	false	true	true
+
+query TTTT
+SELECT market_settled_ts, trades_created_ts, orders_updated_ts, market_positions_last_updated_ts FROM kalshi.main.historical_cutoff;
+----
+2026-11-10 00:00:00+00	2026-11-12 00:00:00+00	NULL	NULL

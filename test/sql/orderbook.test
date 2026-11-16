@@ -1,0 +1,47 @@
+# name: test/sql/orderbook.test
+# description: orderbook(): the recorded KXBTCD book, depth capping, argument errors
+# group: [kalshi]
+#
+# Runs offline against the fake Kalshi API (test/mock_api/server.py: the
+# synthetic DEMOWX fixtures in notebooks/surface_fixtures.json plus one recorded
+# KXBTCD market and order book) through ci/run-integration.sh.
+
+require vgi
+
+require-env VGI_KALSHI_WORKER
+
+require-env KALSHI_BASE_URL
+
+statement ok
+ATTACH 'kalshi' (TYPE vgi, LOCATION '{VGI_KALSHI_WORKER}');
+
+query TIT
+SELECT side, count(*), max(price_dollars) FROM kalshi.main.orderbook('KXBTCD-26NOV1417-T66999.99') GROUP BY side ORDER BY side;
+----
+no	48	0.4800
+yes	46	0.5100
+
+query TT
+SELECT price_dollars, count_fp FROM kalshi.main.orderbook('KXBTCD-26NOV1417-T66999.99') WHERE side = 'yes' AND price_dollars = 0.01;
+----
+0.0100	235511.00
+
+# depth keeps the best levels per side.
+query TTT
+SELECT side, price_dollars, count_fp FROM kalshi.main.orderbook('KXBTCD-26NOV1417-T66999.99', depth => 2) ORDER BY side, price_dollars DESC;
+----
+no	0.4800	5079.00
+no	0.4700	9219.59
+yes	0.5100	5672.00
+yes	0.5000	3884.15
+
+# A market with no resting book is no rows.
+query I
+SELECT count(*) FROM kalshi.main.orderbook('DEMOWX-26NOV15-T20');
+----
+0
+
+statement error
+SELECT * FROM kalshi.main.orderbook('KXBTCD-26NOV1417-T66999.99', depth => -1);
+----
+<REGEX>:.*
