@@ -67,7 +67,7 @@ def to_decimal(value: Any) -> Decimal | None:
         return None
     try:
         parsed = Decimal(str(value))
-    except (InvalidOperation, ValueError):
+    except InvalidOperation, ValueError:
         return None
     return parsed if parsed.is_finite() else None
 
@@ -123,12 +123,12 @@ def to_timestamp(value: Any) -> datetime | None:
     if isinstance(value, (int, float)):
         try:
             parsed = datetime.fromtimestamp(float(value), tz=UTC)
-        except (ValueError, OverflowError, OSError):
+        except ValueError, OverflowError, OSError:
             return None
     else:
         try:
             parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-        except (ValueError, OverflowError):
+        except ValueError, OverflowError:
             return None
         if parsed.tzinfo is None:
             parsed = parsed.replace(tzinfo=UTC)
@@ -151,7 +151,7 @@ def to_float(value: Any) -> float | None:
         return None
     try:
         parsed = float(value)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
     return parsed if parsed == parsed and parsed not in (float("inf"), float("-inf")) else None
 
@@ -167,7 +167,7 @@ def to_integer(value: Any) -> int | None:
         return None
     try:
         return int(value)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
 
 
@@ -207,12 +207,12 @@ def column(rows: Sequence[dict[str, Any]], key: str, field: pa.Field) -> pa.Arra
     # a nested column is worth losing a value over, not a scan.
     try:
         return pa.array(values, type=field.type)
-    except (pa.ArrowInvalid, pa.ArrowTypeError, TypeError, ValueError):
+    except pa.ArrowInvalid, pa.ArrowTypeError, TypeError, ValueError:
         pass
     coerced = [_coerce_nested(v, field.type) for v in values]
     try:
         return pa.array(coerced, type=field.type)
-    except (pa.ArrowInvalid, pa.ArrowTypeError, TypeError, ValueError):
+    except pa.ArrowInvalid, pa.ArrowTypeError, TypeError, ValueError:
         return pa.array([_nullable_nested(v, field.type) for v in coerced], type=field.type)
 
 
@@ -255,7 +255,7 @@ def _nullable_nested(value: Any, kind: pa.DataType) -> Any:
         return None
     try:
         pa.array([value], type=kind)
-    except (pa.ArrowInvalid, pa.ArrowTypeError, TypeError, ValueError):
+    except pa.ArrowInvalid, pa.ArrowTypeError, TypeError, ValueError:
         return None
     return value
 

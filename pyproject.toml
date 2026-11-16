@@ -13,12 +13,12 @@ classifiers = [
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
-    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Database",
     "Topic :: Office/Business :: Financial",
     "Typing :: Typed",
 ]
-requires-python = ">=3.13"
+requires-python = ">=3.14"
 dependencies = [
     # `haybarn` is not optional: vgi-python binds a pushed-down WHERE clause with
     # an in-process DuckDB engine, and without one every filtered scan fails at
@@ -77,7 +77,7 @@ path = "vgi_kalshi/__init__.py"
 
 [tool.ruff]
 line-length = 110
-target-version = "py313"
+target-version = "py314"
 
 # Selected explicitly rather than left to the default set, which changes between
 # ruff releases: 0.15 and 0.16 disagreed by 99 findings on this tree, so CI and
