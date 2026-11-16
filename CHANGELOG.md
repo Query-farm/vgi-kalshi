@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.4.1 (2026-11-16)
+
+- Bump vgi-python to 0.52.2.
+
 ## 1.4.0
 
 ### Added
