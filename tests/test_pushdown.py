@@ -254,6 +254,13 @@ class TestPushdownCoverage:
         "event_metadata",
         "all_exchange_status",
         "all_historical_cutoff",
+        # Account reads: `margin_positions`/`margin_funding_history` take the market as a
+        # named `ticker` argument instead, and an account holds a handful of rows, so
+        # there is nothing worth pushing a WHERE into.
+        "margin_positions",
+        "margin_balance",
+        "margin_risk",
+        "margin_funding_history",
     }
 
     def test_every_filterable_endpoint_pushes(self) -> None:

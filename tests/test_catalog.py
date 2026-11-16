@@ -86,6 +86,8 @@ class TestPagedScans:
         schema = _KALSHI_CATALOG.schemas[0]
         classified = {f.Meta.name for f in BLENDED} | {f.Meta.name for f in PAGED_SCANS}
         scans = {"all_series", "all_exchange_status", "all_historical_cutoff"}
+        # One-shot account reads: a single unpaged GET each, nothing to blend or resume.
+        scans |= {"margin_positions", "margin_balance", "margin_risk", "margin_funding_history"}
         assert {f.Meta.name for f in schema.functions} == classified | scans
         assert not ({f.Meta.name for f in BLENDED} & {f.Meta.name for f in PAGED_SCANS})
 
@@ -108,6 +110,10 @@ class TestCatalogShape:
             "historical_trades",
             "historical_candlesticks",
             "all_historical_cutoff",
+            "margin_positions",
+            "margin_balance",
+            "margin_risk",
+            "margin_funding_history",
         }
         assert not any(n.startswith("kalshi_") for n in names)
 
@@ -266,7 +272,7 @@ class TestNoDeadApiSurface:
     """
 
     #: Modules that put an endpoint on the SQL surface.
-    SURFACE = ("markets.py", "reference.py", "historical.py", "paging.py")
+    SURFACE = ("markets.py", "reference.py", "historical.py", "paging.py", "account.py")
 
     @staticmethod
     def _public_api_functions() -> set[str]:

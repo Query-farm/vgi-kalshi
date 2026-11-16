@@ -4,10 +4,13 @@
     SELECT ticker, title FROM kalshi.series WHERE category = 'Crypto';
     SELECT * FROM kalshi.markets('KXBTCD') WHERE status = 'active';
 
-No credentials are required. Kalshi's entire market-data surface — markets,
-order books, candlesticks, trades, events, series — is public; only portfolio,
-order, and account endpoints need an API key with RSA-PSS request signing, and
-this worker deliberately exposes none of them.
+No credentials are required for market data. Kalshi's entire market-data
+surface — markets, order books, candlesticks, trades, events, series — is
+public. The four ``margin_*`` functions are the exception: they read the key
+holder's own perps account (positions, balance, risk, funding paid) and need a
+``kalshi`` API-key secret. Order entry, transfers and the prediction-market
+portfolio stay out of reach: no write verb exists, and the account paths are a
+fixed allowlist.
 
 Function names are bare (``markets``, not ``kalshi_markets``) because they are
 already qualified by the catalog they live in.
@@ -28,6 +31,7 @@ from vgi.catalog.catalog_interface import AttachOpaqueData, CatalogAttachResult,
 from vgi.catalog.descriptors import Table
 
 from vgi_kalshi import __version__, auth
+from vgi_kalshi.account import ACCOUNT_FUNCTIONS
 from vgi_kalshi.historical import HISTORICAL_FUNCTIONS, SETTLED_VWAP_EXAMPLE, HistoricalCutoffFunction
 from vgi_kalshi.markets import (
     EVENT_LADDER_EXAMPLE,
@@ -43,7 +47,7 @@ IMPLEMENTATION_VERSION = __version__
 DATA_VERSION_SPEC = f"=={__version__}"
 SOURCE_URL = "https://github.com/Query-farm/vgi-kalshi"
 
-_FUNCTIONS = [*MARKET_FUNCTIONS, *REFERENCE_FUNCTIONS, *HISTORICAL_FUNCTIONS]
+_FUNCTIONS = [*MARKET_FUNCTIONS, *REFERENCE_FUNCTIONS, *HISTORICAL_FUNCTIONS, *ACCOUNT_FUNCTIONS]
 
 _EXAMPLE_QUERIES = examples(
     (
@@ -164,6 +168,20 @@ _EXECUTABLE_EXAMPLES = json.dumps(
 #: criteria) live in vgi-agent-tests.yaml, which vgi-lint merges back in by name.
 _AGENT_TEST_TASKS = json.dumps(
     [
+        {
+            "name": "perps_liquidation_risk",
+            "prompt": (
+                "Using my Kalshi API key, list my open perpetual-futures positions with their size, entry "
+                "price, and how far the mark is from Kalshi's estimated liquidation price."
+            ),
+        },
+        {
+            "name": "perps_funding_received",
+            "prompt": (
+                "Using my Kalshi API key, how much funding have my perps positions received or paid in the "
+                "last 30 days, per market, and what is my account equity now?"
+            ),
+        },
         {
             "name": "find_a_series",
             "prompt": "Which Kalshi series cover crypto? List a few of their tickers and titles.",
@@ -293,6 +311,15 @@ _CATEGORIES = json.dumps(
             ),
             "keywords": ["historical", "archive", "settled", "backtest", "resolved"],
         },
+        {
+            "name": "account",
+            "title": "Your Perps Account",
+            "description": (
+                "Your own Kalshi perpetual-futures positions, balance, risk and funding payments. "
+                "Needs a read-only API key as a `kalshi` secret."
+            ),
+            "keywords": ["perps", "margin", "positions", "balance", "funding", "liquidation", "account"],
+        },
     ]
 )
 
@@ -330,8 +357,9 @@ _CATALOG_TAGS = {
         "directly as a probability. Reach for this catalog to answer what the market currently "
         "thinks about a future event, how that view has moved, or how much liquidity stands "
         "behind it. Everything is keyed off a series ticker, so start at the `series` table, "
-        "take a ticker, and go to `markets()` from there. Read-only and public: no credentials, "
-        "no account, no order entry."
+        "take a ticker, and go to `markets()` from there. Read-only: market data needs no "
+        "credentials; the `margin_*` functions read your own perps account with an API key. "
+        "No order entry."
     ),
     "vgi.doc_md": (
         "Kalshi is a CFTC-regulated exchange for event contracts. A contract pays $1 if its "
@@ -352,9 +380,13 @@ _CATALOG_TAGS = {
         "exact fixed-point strings, and rounding them through a float would throw that away "
         "silently. Contract counts (`*_fp`) are decimals for the same reason.\n\n"
         "### Access\n\n"
-        "No credentials are needed. Kalshi's whole market-data surface is public; only "
-        "portfolio and order endpoints require an API key, and this worker exposes none of "
-        "them. It is read-only by construction, not by configuration.\n\n"
+        "No credentials are needed for market data. Kalshi's whole market-data surface is "
+        "public. The four `margin_*` functions (`margin_positions`, `margin_balance`, "
+        "`margin_risk`, `margin_funding_history`) read the key holder's own perps account and "
+        "need a `kalshi` secret; RSA and Ed25519 keys both work, and a read-only key is the "
+        "right kind. Order entry and transfers are out of reach: the worker has no write verb "
+        "and its account paths are a fixed allowlist. Read-only by construction, not by "
+        "configuration.\n\n"
         "### Rate limits\n\n"
         "Unauthenticated traffic is limited tightly enough that a handful of back-to-back "
         "requests draws an HTTP 429. A correlated `LATERAL` issues one request per input row, "
@@ -370,8 +402,11 @@ _CATALOG_TAGS = {
         "[historical archive](https://docs.kalshi.com/getting_started/historical_data).\n"
         "- [Rate limits and tiers](https://docs.kalshi.com/getting_started/rate_limits) — the "
         "request budget that `cache_ttl` and the retry backoff are built around.\n"
-        "- [API keys](https://docs.kalshi.com/getting_started/api_keys) — optional; only "
-        "needed to sign requests at a higher rate-limit tier, via a `kalshi` secret.\n\n"
+        "- [API keys](https://docs.kalshi.com/getting_started/api_keys) — needed for the "
+        "`margin_*` account functions, or to sign market-data requests at a higher rate-limit "
+        "tier, via a `kalshi` secret.\n"
+        "- [Perps API](https://docs.kalshi.com/perps_openapi.yaml) — the `/margin` endpoints "
+        "the account functions read.\n\n"
         "### Terms of use\n\n"
         "The market data is Kalshi Inc.'s, not covered by this worker's MIT license, and is "
         "subject to the [Kalshi Data Terms of Use]"
@@ -557,13 +592,14 @@ _KALSHI_CATALOG = Catalog(
     comment=(
         "Read-only public data from Kalshi, a CFTC-regulated US prediction-market exchange whose "
         "contract prices read directly as event probabilities, covering live and archived markets. "
-        "No account or API key is required."
+        "Market data needs no account or API key; the margin_* functions read your own perps "
+        "account with one."
     ),
     tags=_CATALOG_TAGS,
     schemas=[
         Schema(
             path=["main"],
-            comment="Kalshi public market data — no credentials required",
+            comment="Kalshi public market data (no credentials) and your own perps account (margin_*)",
             tags=_SCHEMA_TAGS,
             functions=list(_FUNCTIONS),
             tables=[
@@ -648,8 +684,9 @@ class KalshiCatalog(ReadOnlyCatalogInterface):
     """Advertises the worker's versions, its optional credential, and the auth mode.
 
     Authentication is opt-in and, at Kalshi's entry tier, not a throughput win —
-    see the rate-limit section of the README. The credential is a DuckDB secret
-    rather than an ATTACH option because one of its two values is an RSA private
+    see the rate-limit section of the README — except for the ``margin_*``
+    account functions, which always need it. The credential is a DuckDB secret
+    rather than an ATTACH option because one of its two values is a private
     key, and ATTACH option strings are visible in ``duckdb_databases()``.
 
     The one thing worth deciding at ATTACH time is what should happen when no

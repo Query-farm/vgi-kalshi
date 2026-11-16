@@ -50,6 +50,31 @@ class TestNoWriteVerbs:
                 assert f'"{fragment}' not in text, f"{path.name} references {fragment}"
 
 
+class TestAccountPathsArePinned:
+    """The account surface is exactly four signed reads of fixed paths.
+
+    Credentialed perps endpoints sit beside order entry under ``/margin``
+    (``/margin/orders``, ``/margin/order_groups``, ``.../exit_trigger``). Any
+    ``/margin/`` path in the source must be one of the allowlisted reads, so a
+    new one cannot slip in without this list changing in review.
+    """
+
+    ALLOWED = {"/margin/positions", "/margin/balance", "/margin/risk", "/margin/funding_history"}
+
+    def test_only_allowlisted_margin_paths_appear(self) -> None:
+        import re
+
+        found: set[str] = set()
+        for path in PACKAGE.rglob("*.py"):
+            found |= set(re.findall(r"[\"'](/margin/[A-Za-z_/{}]*)", path.read_text()))
+        assert found <= self.ALLOWED, f"unexpected /margin paths: {sorted(found - self.ALLOWED)}"
+
+    def test_the_allowlist_matches_the_api_module(self) -> None:
+        from vgi_kalshi.kalshi_api import ACCOUNT_PATHS
+
+        assert set(ACCOUNT_PATHS) == self.ALLOWED
+
+
 class TestPathTraversal:
     """A ticker must not be able to leave its path segment.
 

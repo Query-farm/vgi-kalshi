@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.4.0
+
+### Added
+
+- **Ed25519 API keys.** The `kalshi` secret now accepts an Ed25519 private key as
+  well as RSA; Ed25519 keys sign the request message directly, RSA keys keep
+  RSA-PSS/SHA-256. Anything else (an EC key, say) is still rejected by name.
+- **Your perps account**, read-only, behind the `kalshi` secret:
+  `margin_positions()`, `margin_balance()`, `margin_risk()` and
+  `margin_funding_history()` — positions, equity and margin, leverage and
+  Kalshi's estimated liquidation price, and funding actually paid or received.
+  They are signed GETs of four allowlisted `/margin` paths, never sent
+  unsigned, and uncached. Account money is `DECIMAL(20,6)`.
+- A new `account` function category, and two agent test tasks covering it.
+
+### Changed
+
+- The read-only guard now pins the credentialed surface: any `/margin/` path in
+  the source must be one of the four allowlisted reads.
+- Requires `vgi-python` 0.52.0 or newer (pyproject and both entry-point scripts).
+- README's pinned-install example now pins v1.4.0.
+
 ## 1.3.1
 
 ### Fixed

@@ -60,7 +60,7 @@ Pin a tag for a deployment, so the worker cannot change under you:
 
 ```sql
 ATTACH 'kalshi' (TYPE vgi,
-  LOCATION 'uvx --from git+https://github.com/Query-farm/vgi-kalshi@v1.3.1 vgi-kalshi');
+  LOCATION 'uvx --from git+https://github.com/Query-farm/vgi-kalshi@v1.4.0 vgi-kalshi');
 ```
 
 **This package is not published to PyPI, and is not intended to be** — install
@@ -81,7 +81,7 @@ git clone https://github.com/Query-farm/vgi-kalshi
 cd vgi-kalshi
 
 uv sync --all-extras     # Install dependencies
-uv run pytest            # 234 offline tests
+uv run pytest            # 287 offline tests
 uv run ruff check .      # Lint
 ```
 
@@ -151,6 +151,43 @@ caught exactly that on all three.
 | `historical_markets(series_ticker)` *(scan)* | series_ticker | `event_ticker` |
 | `historical_trades(ticker)` | ticker | `min_ts`, `max_ts`, `max_rows` |
 | `historical_candlesticks(ticker)` | ticker | `period_interval`, `start_ts`, `end_ts` |
+
+### Your perps account (API key required)
+
+Four functions read **your own** Kalshi perpetual-futures account. They are the
+only ones that need credentials — a `kalshi` secret, see
+[Authentication](#authentication) — and they fail rather than return an empty
+result when no key resolves, so a missing key cannot read as a flat account.
+Nothing is cached: account state must never be served stale.
+
+| Function | Named | Returns, one row per |
+|---|---|---|
+| `margin_positions()` | `ticker`, `subaccount` | open position: signed size, entry, unrealized P&L, margin used, fees |
+| `margin_balance()` | — | subaccount: equity, position value, initial and maintenance margin |
+| `margin_risk()` | — | position: mark, notional, leverage, Kalshi's estimated liquidation price |
+| `margin_funding_history()` | `ticker`, `start_date`, `end_date`, `subaccount` | funding settlement: rate, mark, `funding_amount` (+ received / − paid) |
+
+Prices are **per contract**, as Kalshi quotes them: KXGOLDPERP is 0.001 oz and
+KXBTCPERP 0.0001 BTC per contract, so divide by the contract size for a per-unit
+price. Account money is `DECIMAL(20,6)`, because Kalshi emits up to six decimals
+there. Dates are `'YYYY-MM-DD'` strings or `DATE`s; funding history defaults to
+the last 30 days.
+
+```sql
+-- How far each position is from liquidation
+SELECT p.market_ticker, p.position, p.entry_price, r.mark_price, r.estimated_liquidation_price,
+       r.estimated_liquidation_price / r.mark_price - 1 AS move_to_liquidation
+FROM kalshi.main.margin_positions() p
+JOIN kalshi.main.margin_risk() r USING (subaccount, market_ticker);
+
+-- Funding received this month, per market
+SELECT market_ticker, sum(funding_amount) AS received
+FROM kalshi.main.margin_funding_history(start_date => DATE '2026-11-01')
+GROUP BY market_ticker;
+```
+
+The public perps *market* data (marks, funding rates, order books) is not here;
+[vgi-perps](https://github.com/Query-farm/vgi-perps) serves it across venues.
 
 ### The archive
 
@@ -493,9 +530,11 @@ that had already made 300 successful calls. A 4xx is not retried, and a 429 is
 never folded into the freshness hint, since it carries the CDN's error policy
 rather than the resource's.
 
-## Authentication (optional, and rarely worth it)
+## Authentication
 
-The whole surface this worker exposes is public, and **authenticating does not
+Market data needs none: that whole surface is public. The `margin_*` account
+functions above need a key, and are the main reason to configure one. For market
+data alone it is rarely worth it, because **authenticating does not
 speed it up at Kalshi's entry tier.** Kalshi's documented budgets are per
 account, in tokens per second, with most calls costing 10:
 
@@ -513,7 +552,9 @@ if you would rather depend on a documented limit than an undocumented one — no
 as a fix for a slow query.
 
 Credentials are a **DuckDB secret**, not an ATTACH option, because one of the two
-values is an RSA private key and ATTACH strings show up in `duckdb_databases()`:
+values is a private key and ATTACH strings show up in `duckdb_databases()`.
+Kalshi issues **RSA and Ed25519** keys and both work; create the key
+**read-only** in Kalshi's API key settings, which is all this worker needs:
 
 ```sql
 CREATE SECRET kalshi (
@@ -537,8 +578,9 @@ CREATE SECRET kalshi_demo (
 ```
 
 `private_key` is declared redacted, so `duckdb_secrets()` masks it. Requests are
-then signed per Kalshi's scheme — RSA-PSS over SHA-256 of
-`timestamp + METHOD + /trade-api/v2 + path`, base64 — and re-signed on every
+then signed per Kalshi's scheme — the message
+`timestamp + METHOD + /trade-api/v2 + path` signed with RSA-PSS over SHA-256 for
+an RSA key, or directly for an Ed25519 key, base64 — and re-signed on every
 retry, since a signature covers a timestamp and a replayed one after 8s of
 backoff is a 401.
 
@@ -556,8 +598,11 @@ ATTACH 'kalshi' (TYPE vgi, LOCATION 'uv run kalshi_worker.py', auth 'required');
 
 `required` exists so a deployment that means to be authenticated cannot silently
 end up anonymous on a different rate limit. Signing stays read-only: it adds
-three headers to a `GET` and nothing else, and the credential never reaches any
-endpoint outside the public market-data surface.
+three headers to a `GET` and nothing else. Beyond the public market data, the
+credential reaches exactly four account paths — `/margin/positions`,
+`/margin/balance`, `/margin/risk`, `/margin/funding_history` — pinned by an
+allowlist that `tests/test_readonly_guard.py` checks; order entry, transfers and
+the prediction-market portfolio are unreachable.
 
 ## Catalog metadata
 

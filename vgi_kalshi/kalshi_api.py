@@ -3,7 +3,10 @@
 Every function here issues ``GET`` requests only — the single chokepoint
 :func:`_get` is the sole place an HTTP call is made, which is what the read-only
 CI guard (``tests/test_readonly_guard.py``) asserts against. The market-data
-surface this worker exposes is public: no API key, no RSA-PSS request signing.
+surface is public: no API key, no request signing. The ``margin_*`` account
+reads at the bottom of this module are the exception: they need a signed key and
+read only the key holder's own perps account, from a fixed allowlist of paths
+(:data:`ACCOUNT_PATHS`).
 
 Kalshi returns money and contract counts as **fixed-point strings**
 (``"0.7000"``, ``"136798.00"``) rather than JSON numbers. They are carried
@@ -839,3 +842,101 @@ def series_list(
         )
         or []
     )
+
+
+# --------------------------------------------------------------------------
+# Perps (margin) account reads — signed, read-only, the key holder's own data
+# --------------------------------------------------------------------------
+#
+# Kalshi's perpetual futures live under ``/margin``. Market data there is public
+# (vgi-perps serves it); these four are the account side. Every one is a GET of
+# a fixed path with no caller-supplied path segment, so there is nothing for a
+# hostile value to traverse. The read-only guard pins this set.
+
+#: The only credentialed paths this worker may call.
+ACCOUNT_PATHS = frozenset({"/margin/positions", "/margin/balance", "/margin/risk", "/margin/funding_history"})
+
+
+class KalshiCredentialsRequired(RuntimeError):
+    """An account function was called without a usable ``kalshi`` secret."""
+
+    def __init__(self, function: str) -> None:
+        super().__init__(
+            f"{function} reads your own Kalshi perps account and needs an API key: "
+            "CREATE SECRET (TYPE kalshi, key_id '...', private_key '...') first. "
+            "A read-only key is enough and is the right kind to use."
+        )
+
+
+def _account_get(
+    path: str,
+    params: dict[str, Any] | None,
+    *,
+    function: str,
+    client: httpx.Client | None,
+    credentials: Credentials | None,
+) -> dict[str, Any]:
+    """A signed GET of one allowlisted account path. Never sent unsigned."""
+    if path not in ACCOUNT_PATHS:  # pragma: no cover - a programming error, not an input
+        raise ValueError(f"{path} is not an allowlisted account path")
+    if credentials is None:
+        raise KalshiCredentialsRequired(function)
+    return _get(path, params, client=client, credentials=credentials)
+
+
+def margin_positions(
+    *,
+    ticker: str | None = None,
+    subaccount: int | None = None,
+    client: httpx.Client | None = None,
+    credentials: Credentials | None = None,
+) -> list[dict[str, Any]]:
+    """Open perps positions across every subaccount (or one), one dict per position."""
+    body = _account_get(
+        "/margin/positions",
+        {"ticker": ticker or None, "subaccount": subaccount},
+        function="margin_positions",
+        client=client,
+        credentials=credentials,
+    )
+    return list(body.get("positions") or [])
+
+
+def margin_balance(
+    *, client: httpx.Client | None = None, credentials: Credentials | None = None
+) -> dict[str, Any]:
+    """Cash, equity and margin per subaccount, plus account-wide settled funds."""
+    return _account_get(
+        "/margin/balance", None, function="margin_balance", client=client, credentials=credentials
+    )
+
+
+def margin_risk(
+    *, client: httpx.Client | None = None, credentials: Credentials | None = None
+) -> dict[str, Any]:
+    """Account leverage plus per-position leverage and estimated liquidation price."""
+    return _account_get("/margin/risk", None, function="margin_risk", client=client, credentials=credentials)
+
+
+def margin_funding_history(
+    start_date: str,
+    end_date: str,
+    *,
+    ticker: str | None = None,
+    subaccount: int | None = None,
+    client: httpx.Client | None = None,
+    credentials: Credentials | None = None,
+) -> list[dict[str, Any]]:
+    """Funding actually paid or received, per settlement, over an inclusive UTC date range.
+
+    ``funding_amount`` is signed from the holder's side: positive was received.
+    Kalshi requires both dates (``YYYY-MM-DD``) and does not page this endpoint.
+    """
+    body = _account_get(
+        "/margin/funding_history",
+        {"start_date": start_date, "end_date": end_date, "ticker": ticker or None, "subaccount": subaccount},
+        function="margin_funding_history",
+        client=client,
+        credentials=credentials,
+    )
+    return list(body.get("funding_history") or [])

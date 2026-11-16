@@ -54,6 +54,8 @@ def _sql_type(kind: pa.DataType) -> str:
         return "BIGINT"
     if pa.types.is_int32(kind):
         return "INTEGER"
+    if pa.types.is_float64(kind):
+        return "DOUBLE"
     if pa.types.is_string(kind) or pa.types.is_large_string(kind):
         return "VARCHAR"
     if pa.types.is_map(kind):

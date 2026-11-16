@@ -1,13 +1,14 @@
-"""Optional Kalshi API-key authentication (RSA-PSS request signing).
+"""Kalshi API-key authentication (RSA-PSS or Ed25519 request signing).
 
-Authentication is **not** required by this worker and is not a throughput win at
-Kalshi's entry tier — see the rate-limit note in the README. It exists so an
-account with a higher tier can use it, and so a deployment can trade the
-undocumented per-IP allowance for a documented one.
+Authentication is **not** required for the public market data, and is not a
+throughput win at Kalshi's entry tier — see the rate-limit note in the README.
+It is required by the ``margin_*`` account functions, which read the key
+holder's own perps positions, balance, risk and funding payments. Kalshi issues
+both RSA and Ed25519 keys; both are accepted.
 
 Credentials arrive as a DuckDB secret rather than an ATTACH option, because an
 ATTACH option string is visible in ``duckdb_databases()`` and in anything that
-logs the statement, and one of these values is an RSA private key::
+logs the statement, and one of these values is a private key::
 
     CREATE SECRET kalshi (
         TYPE kalshi,
@@ -26,8 +27,8 @@ base URL being called::
                                SCOPE 'https://demo-api.kalshi.co');
 
 Signing stays read-only: it adds three request headers to a ``GET`` and nothing
-else. The chokepoint in :mod:`vgi_kalshi.kalshi_api` is still the only place an
-HTTP call is made.
+else. Kalshi lets an API key be created read-only; use one. The chokepoint in
+:mod:`vgi_kalshi.kalshi_api` is still the only place an HTTP call is made.
 """
 
 from __future__ import annotations
@@ -40,7 +41,7 @@ from typing import Any
 import pyarrow as pa
 from cryptography.exceptions import UnsupportedAlgorithm
 from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import padding, rsa
+from cryptography.hazmat.primitives.asymmetric import ed25519, padding, rsa
 from vgi.catalog.secret_type import SecretTypeSpec
 
 #: The DuckDB secret type this worker registers at ATTACH.
@@ -58,9 +59,9 @@ API_ROOT_PATH = "/trade-api/v2"
 SECRET_SPEC = SecretTypeSpec(
     name=SECRET_TYPE,
     description=(
-        "Kalshi API credentials for authenticated access. Optional — this worker's "
-        "whole surface is public without them. Provide key_id (the API Key ID) and "
-        "private_key (its RSA private key, PEM)."
+        "Kalshi API credentials for authenticated access. Optional for market data, "
+        "which is public. Provide key_id (the API Key ID) and "
+        "private_key (its RSA or Ed25519 private key, PEM). Required by the margin_* account functions."
     ),
     schema=pa.schema(
         [
@@ -76,7 +77,7 @@ SECRET_SPEC = SecretTypeSpec(
                 pa.string(),
                 metadata={
                     "redact": "true",
-                    "vgi_doc": "RSA private key (PEM) downloaded once when the API key is created",
+                    "vgi_doc": "RSA or Ed25519 private key (PEM) downloaded once when the API key is created",
                 },
             ),
         ],
@@ -94,15 +95,16 @@ class Credentials:
     """A loaded Kalshi API key, ready to sign requests."""
 
     key_id: str
-    private_key: rsa.RSAPrivateKey
+    private_key: rsa.RSAPrivateKey | ed25519.Ed25519PrivateKey
 
     def headers(self, method: str, path: str, *, now_ms: int | None = None) -> dict[str, str]:
         """The three signed headers for one request.
 
         Kalshi signs ``timestamp + METHOD + path`` where ``path`` is the full
         path from the API root **without** the query string, so two calls to the
-        same endpoint with different parameters share a signature input. The
-        signature is RSA-PSS over SHA-256 with a digest-length salt, base64'd.
+        same endpoint with different parameters share a signature input. An RSA
+        key signs RSA-PSS over SHA-256 with a digest-length salt; an Ed25519 key
+        signs the message directly (Ed25519 hashes internally). Either is base64'd.
 
         Args:
             method: HTTP method, uppercased by the caller's convention.
@@ -115,11 +117,14 @@ class Credentials:
         """
         timestamp = str(int(time.time() * 1000) if now_ms is None else now_ms)
         message = f"{timestamp}{method}{API_ROOT_PATH}{path}".encode()
-        signature = self.private_key.sign(
-            message,
-            padding.PSS(mgf=padding.MGF1(hashes.SHA256()), salt_length=padding.PSS.DIGEST_LENGTH),
-            hashes.SHA256(),
-        )
+        if isinstance(self.private_key, ed25519.Ed25519PrivateKey):
+            signature = self.private_key.sign(message)
+        else:
+            signature = self.private_key.sign(
+                message,
+                padding.PSS(mgf=padding.MGF1(hashes.SHA256()), salt_length=padding.PSS.DIGEST_LENGTH),
+                hashes.SHA256(),
+            )
         return {
             "KALSHI-ACCESS-KEY": self.key_id,
             "KALSHI-ACCESS-TIMESTAMP": timestamp,
@@ -131,8 +136,8 @@ def load(key_id: str, private_key_pem: str) -> Credentials:
     """Parse a PEM private key into :class:`Credentials`.
 
     Raises:
-        KalshiAuthError: The PEM is unreadable, encrypted, or not an RSA key.
-            Kalshi's scheme is RSA-PSS specifically, so an EC or Ed25519 key is
+        KalshiAuthError: The PEM is unreadable, encrypted, or neither an RSA nor
+            an Ed25519 key. Kalshi accepts only those two, so an EC key (say) is
             a configuration mistake worth naming rather than a signing failure
             later, on every request.
     """
@@ -149,9 +154,9 @@ def load(key_id: str, private_key_pem: str) -> Credentials:
         raise KalshiAuthError(
             f"could not read the {PRIVATE_KEY!r} in the {SECRET_TYPE!r} secret as a PEM private key: {exc}"
         ) from exc
-    if not isinstance(key, rsa.RSAPrivateKey):
+    if not isinstance(key, (rsa.RSAPrivateKey, ed25519.Ed25519PrivateKey)):
         raise KalshiAuthError(
-            f"Kalshi signs with RSA-PSS, but the {PRIVATE_KEY!r} in the {SECRET_TYPE!r} "
+            f"Kalshi signs with RSA-PSS or Ed25519, but the {PRIVATE_KEY!r} in the {SECRET_TYPE!r} "
             f"secret is a {type(key).__name__}"
         )
     return Credentials(key_id=key_id, private_key=key)

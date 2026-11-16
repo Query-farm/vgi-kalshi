@@ -48,6 +48,26 @@ class TestSigning:
             hashes.SHA256(),
         )
 
+    def test_ed25519_signature_verifies_against_the_public_key(self) -> None:
+        """An Ed25519 key signs the same timestamp + METHOD + path message, unhashed by us."""
+        from cryptography.hazmat.primitives.asymmetric import ed25519
+
+        key = ed25519.Ed25519PrivateKey.generate()
+        pem = key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.PKCS8,
+            encryption_algorithm=serialization.NoEncryption(),
+        ).decode()
+        creds = auth.load("key-ed", pem)
+        headers = creds.headers("GET", "/margin/positions", now_ms=1794806000000)
+
+        assert headers["KALSHI-ACCESS-KEY"] == "key-ed"
+        # Raises InvalidSignature on mismatch.
+        key.public_key().verify(
+            base64.b64decode(headers["KALSHI-ACCESS-SIGNATURE"]),
+            b"1794806000000GET/trade-api/v2/margin/positions",
+        )
+
     def test_signed_path_includes_the_api_root(self, keypair: tuple[str, rsa.RSAPublicKey]) -> None:
         """Signing the bare '/markets' rather than '/trade-api/v2/markets' is a 401."""
         assert auth.API_ROOT_PATH == "/trade-api/v2"
@@ -81,12 +101,12 @@ class TestCredentialErrors:
         with pytest.raises(auth.KalshiAuthError, match="PEM private key"):
             auth.load("key-1", "not a pem")
 
-    def test_a_non_rsa_key_is_named(self) -> None:
-        """Kalshi's scheme is RSA-PSS, so an Ed25519 key can never work."""
-        from cryptography.hazmat.primitives.asymmetric import ed25519
+    def test_an_unsupported_key_type_is_named(self) -> None:
+        """Kalshi accepts RSA and Ed25519 keys only, so an EC key can never work."""
+        from cryptography.hazmat.primitives.asymmetric import ec
 
         pem = (
-            ed25519.Ed25519PrivateKey.generate()
+            ec.generate_private_key(ec.SECP256R1())
             .private_bytes(
                 encoding=serialization.Encoding.PEM,
                 format=serialization.PrivateFormat.PKCS8,
@@ -94,7 +114,7 @@ class TestCredentialErrors:
             )
             .decode()
         )
-        with pytest.raises(auth.KalshiAuthError, match="RSA-PSS"):
+        with pytest.raises(auth.KalshiAuthError, match="RSA-PSS or Ed25519"):
             auth.load("key-1", pem)
 
     def test_half_a_credential_is_an_error(self, keypair: tuple[str, rsa.RSAPublicKey]) -> None:

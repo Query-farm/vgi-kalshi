@@ -5,6 +5,25 @@
 # merges these fields back in, by task name, when it simulates the suite.
 
 tasks:
+# The two perps tasks read the key holder's own account, so simulating them needs a `kalshi`
+# secret (a read-only API key); without one every margin_* call fails by design.
+- name: perps_liquidation_risk
+  reference_sql: >-
+    SELECT p.market_ticker, p.position, p.entry_price, r.mark_price, r.estimated_liquidation_price,
+    r.estimated_liquidation_price / r.mark_price - 1 AS move_to_liquidation FROM kalshi.main.margin_positions() p
+    JOIN kalshi.main.margin_risk() r USING (subaccount, market_ticker)
+  success_criteria: >-
+    Uses margin_positions() for size and entry and margin_risk() for the liquidation estimate (joined on
+    subaccount and market_ticker), rather than computing a liquidation price itself.
+  unordered: true
+- name: perps_funding_received
+  reference_sql: >-
+    SELECT market_ticker, sum(funding_amount) AS net_funding FROM kalshi.main.margin_funding_history() GROUP BY
+    market_ticker; SELECT sum(account_equity) FROM kalshi.main.margin_balance()
+  success_criteria: >-
+    Sums funding_amount from margin_funding_history() (positive = received) over its default 30 days or an
+    explicit start_date, and reads account_equity from margin_balance().
+  unordered: true
 - name: find_a_series
   reference_sql: >-
     SELECT ticker, title FROM kalshi.main.series WHERE category = 'Crypto' ORDER BY ticker LIMIT 10

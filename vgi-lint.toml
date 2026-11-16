@@ -17,7 +17,11 @@ all_exchange_status backs `exchange_status`, and all_historical_cutoff backs \
 `historical_cutoff`. The rule looks for a table whose name matches the \
 function's, so it cannot see the link. The names differ deliberately — a \
 function and a table cannot share one name in a schema, so the scan takes the \
-`all_` prefix and the table keeps the name consumers actually type.\
+`all_` prefix and the table keeps the name consumers actually type. \
+margin_balance and margin_risk are the other two: they read the caller's own \
+perps account and need a kalshi API-key secret, so they stay functions — a \
+table is listed and browsed like public data, and every scan of it would fail \
+for a caller without a key.\
 """ },
 ]
 

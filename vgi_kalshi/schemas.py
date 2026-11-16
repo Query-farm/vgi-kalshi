@@ -141,6 +141,21 @@ def to_timestamp(value: Any) -> datetime | None:
     return parsed
 
 
+def to_float(value: Any) -> float | None:
+    """A JSON number (or numeric string) as a finite float, else None.
+
+    Used only for the few fields Kalshi itself sends as doubles (leverage,
+    return on equity, funding rate), never for money or counts.
+    """
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed == parsed and parsed not in (float("inf"), float("-inf")) else None
+
+
 def to_integer(value: Any) -> int | None:
     """Parse an integer, or None when the value is not one.
 
@@ -182,6 +197,8 @@ def column(rows: Sequence[dict[str, Any]], key: str, field: pa.Field) -> pa.Arra
         return pa.array([None if v is None else bool(v) for v in values], type=field.type)
     if pa.types.is_integer(field.type):
         return pa.array([to_integer(v) for v in values], type=field.type)
+    if pa.types.is_floating(field.type):
+        return pa.array([to_float(v) for v in values], type=field.type)
     if pa.types.is_string(field.type):
         return pa.array([None if v is None else str(v) for v in values], type=field.type)
     # Lists and structs: Arrow validates the shape, and there is no per-value
@@ -686,3 +703,164 @@ HISTORICAL_CUTOFF_SCHEMA = pa.schema(
         ),
     ]
 )
+
+
+# ---------------------------------------------------------------------------
+# Perps (margin) account — the margin_* functions
+# ---------------------------------------------------------------------------
+
+#: Account money. Kalshi's spec says responses "emit up to 6" decimal places
+#: (balances arrive as "1090.356500"), and :func:`fits_decimal` would NULL a
+#: 6dp value in the 4dp :data:`DOLLARS` rather than round it.
+ACCOUNT_DOLLARS = pa.decimal128(20, 6)
+
+_SUBACCOUNT = field(
+    "subaccount",
+    pa.int32(),
+    "Subaccount number: 0 is the primary (cross) account, 1-63 numbered subaccounts; "
+    "an isolated position has its own.",
+)
+_SUBACCOUNT_TYPE = field(
+    "subaccount_type",
+    pa.string(),
+    "How the subaccount is margined: 'cross', 'isolated', 'auto_rebalance' or 'managed_isolated'.",
+)
+_PER_CONTRACT = (
+    " Per contract, as Kalshi quotes it: divide by the contract size (e.g. 0.001 oz for KXGOLDPERP, "
+    "0.0001 BTC for KXBTCPERP) for a per-unit price."
+)
+
+MARGIN_POSITION_SCHEMA = pa.schema(
+    [
+        _SUBACCOUNT,
+        _SUBACCOUNT_TYPE,
+        field("market_ticker", pa.string(), "Perp market ticker, e.g. 'KXGOLDPERP'."),
+        field("position", COUNT, "Signed contract count: positive = long, negative = short."),
+        field(
+            "entry_price",
+            ACCOUNT_DOLLARS,
+            "Weighted average entry price of the open position." + _PER_CONTRACT,
+        ),
+        field(
+            "unrealized_pnl", ACCOUNT_DOLLARS, "Mark-to-market unrealized P&L in dollars (excludes funding)."
+        ),
+        field(
+            "margin_used",
+            ACCOUNT_DOLLARS,
+            "Maintenance-margin capital used by this position; NULL when it is hedged within a portfolio.",
+        ),
+        field(
+            "fees",
+            ACCOUNT_DOLLARS,
+            "Fees accumulated over the life of the current open position, in dollars.",
+        ),
+        field("roe", pa.float64(), "Return on equity, percent: unrealized_pnl / margin_used * 100."),
+        field("is_portfolio", pa.bool_(), "True when the position is margined as part of a portfolio."),
+    ]
+)
+
+MARGIN_BALANCE_SCHEMA = pa.schema(
+    [
+        _SUBACCOUNT,
+        _SUBACCOUNT_TYPE,
+        field(
+            "account_equity",
+            ACCOUNT_DOLLARS,
+            "Equity of this subaccount in dollars: cash plus position value.",
+        ),
+        field(
+            "position_value",
+            ACCOUNT_DOLLARS,
+            "Mark-to-market value of the subaccount's open positions (negative for shorts).",
+        ),
+        field("initial_margin", ACCOUNT_DOLLARS, "Initial margin requirement in dollars."),
+        field(
+            "maintenance_margin",
+            ACCOUNT_DOLLARS,
+            "Maintenance margin requirement in dollars; equity below it is liquidated.",
+        ),
+        field(
+            "resting_orders_margin",
+            ACCOUNT_DOLLARS,
+            "Margin locked by resting orders (0 unless Kalshi computed it).",
+        ),
+        field("available_balance", ACCOUNT_DOLLARS, "Available balance (0 unless Kalshi computed it)."),
+        field(
+            "settled_funds",
+            ACCOUNT_DOLLARS,
+            "Account-wide settled funds, repeated on every row; NULL for a subaccount-restricted key.",
+        ),
+    ]
+)
+
+MARGIN_RISK_SCHEMA = pa.schema(
+    [
+        _SUBACCOUNT,
+        _SUBACCOUNT_TYPE,
+        field("market_ticker", pa.string(), "Perp market ticker."),
+        field("position", COUNT, "Signed contract count: positive = long, negative = short."),
+        field("mark_price", ACCOUNT_DOLLARS, "Current mark price." + _PER_CONTRACT),
+        field("position_notional", ACCOUNT_DOLLARS, "Position notional in dollars."),
+        field(
+            "maintenance_margin_required",
+            ACCOUNT_DOLLARS,
+            "Maintenance margin this position needs, in dollars.",
+        ),
+        field("position_leverage", pa.float64(), "Notional over the margin backing this position."),
+        field(
+            "estimated_liquidation_price",
+            ACCOUNT_DOLLARS,
+            "Kalshi's estimated liquidation mark." + _PER_CONTRACT,
+        ),
+        field("is_portfolio", pa.bool_(), "True when the position is margined as part of a portfolio."),
+        field("account_leverage", pa.float64(), "Account-wide leverage, repeated on every row."),
+        field(
+            "total_position_notional",
+            ACCOUNT_DOLLARS,
+            "Account-wide position notional, repeated on every row.",
+        ),
+        field(
+            "total_maintenance_margin",
+            ACCOUNT_DOLLARS,
+            "Account-wide maintenance margin, repeated on every row.",
+        ),
+    ]
+)
+
+MARGIN_FUNDING_SCHEMA = pa.schema(
+    [
+        field("market_ticker", pa.string(), "Perp market ticker."),
+        field("funding_time", TIMESTAMP, "When the funding payment was applied."),
+        field("funding_rate", pa.float64(), "Funding rate for the period; positive means longs paid shorts."),
+        field("mark_price", ACCOUNT_DOLLARS, "Mark price at funding time." + _PER_CONTRACT),
+        field(
+            "funding_amount",
+            ACCOUNT_DOLLARS,
+            "Dollars paid or received by you: positive = received, negative = paid.",
+        ),
+        field("quantity", COUNT, "Signed position size in contracts at funding time."),
+        field("subaccount", pa.int32(), "Subaccount the payment was booked to."),
+        _SUBACCOUNT_TYPE,
+    ]
+)
+
+
+def flatten_margin_balance(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    """One row per subaccount, with the account-wide settled funds on each."""
+    settled = payload.get("settled_funds")
+    return [{**row, "settled_funds": settled} for row in payload.get("subaccount_balances") or []]
+
+
+def flatten_margin_risk(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    """One row per position, with the account-level totals repeated on each."""
+    totals = {
+        "account_leverage": payload.get("account_leverage"),
+        "total_position_notional": payload.get("total_position_notional"),
+        "total_maintenance_margin": payload.get("total_maintenance_margin"),
+    }
+    return [{**row, **totals} for row in payload.get("positions") or []]
+
+
+def flatten_margin_funding(rows: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Kalshi names the subaccount ``subaccount_number`` here and ``subaccount`` elsewhere; unify it."""
+    return [{**row, "subaccount": row.get("subaccount_number")} for row in rows]
