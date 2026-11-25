@@ -1,7 +1,7 @@
 # /// script
 # requires-python = ">=3.14"
 # dependencies = [
-#     "vgi-python[http,haybarn]>=0.52.2,<0.53",
+#     "vgi-python[http,haybarn]>=0.55.2,<0.56",
 #     "vgi-rpc>=0.53.1",
 #     "numpy>=2",
 #     "httpx>=0.27",

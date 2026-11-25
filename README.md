@@ -60,7 +60,7 @@ Pin a tag for a deployment, so the worker cannot change under you:
 
 ```sql
 ATTACH 'kalshi' (TYPE vgi,
-  LOCATION 'uvx --from git+https://github.com/Query-farm/vgi-kalshi@v1.4.2 vgi-kalshi');
+  LOCATION 'uvx --from git+https://github.com/Query-farm/vgi-kalshi@v1.5.0 vgi-kalshi');
 ```
 
 **This package is not published to PyPI, and is not intended to be** — install
@@ -98,6 +98,8 @@ The entry-point scripts (`kalshi_worker.py`, `serve.py`) always resolve from
 PyPI via their own PEP-723 headers, independently of `pyproject.toml`. That is
 deliberate — and it is why `tests/test_packaging.py` exists, since the two sets
 of pins drift silently otherwise.
+
+vgi-kalshi 1.5.0 speaks VGI protocol 3.4, so it needs Haybarn 2.0.1 or newer (Haybarn 2.0.0 loads a 3.3 `vgi` extension that cannot attach it).
 
 ## Surface
 
